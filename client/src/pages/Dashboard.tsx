@@ -1,127 +1,211 @@
-import { useState } from 'react'
-import { useAuth, useAgent } from '../contexts/AgentContext'
-import { useLeads } from '../hooks/useLeads'
-import Header from '../components/Header'
-import FilterBar from '../components/FilterBar'
-import LeadsTable from '../components/LeadsTable'
-import LoadingSpinner from '../components/LoadingSpinner'
-import ErrorMessage from '../components/ErrorMessage'
-import NewLeadsDashboard from './NewLeadsDashboard'
+import { useState, useEffect } from 'react';
+import { AppLayout } from '../components/layout/AppLayout';
+import { TrendingUp, Users, Phone, DollarSign, AlertCircle, RefreshCw } from 'lucide-react';
+import { fetchLeadStats, StatsResponse } from '../lib/api';
 
-type FilterType = 'All' | 'Today' | 'Upcoming' | 'Overdue' | 'Completed'
-type ViewType = 'follow-ups' | 'new-leads'
+export default function DashboardPage() {
+  const [stats, setStats] = useState<StatsResponse['data'] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
-const Dashboard = () => {
-  const { user } = useAuth()
-  const { agentName } = useAgent()
-  const { leads, loading, error, refresh, updateFollowUp, completeFollowUp } = useLeads()
-  const [activeFilter, setActiveFilter] = useState<FilterType>('All')
-  const [activeView, setActiveView] = useState<ViewType>('new-leads')
+  const loadStats = async () => {
+    try {
+      setLoading(true);
+      const response = await fetchLeadStats();
+      setStats(response.data);
+      setLastUpdate(new Date());
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load stats');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const filteredLeads = leads.filter(lead => {
-    if (activeFilter === 'All') return true
-    return lead.status === activeFilter
-  })
+  useEffect(() => {
+    loadStats();
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(loadStats, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
-  const counts = {
-    all: leads.length,
-    today: leads.filter(l => l.status === 'Today').length,
-    upcoming: leads.filter(l => l.status === 'Upcoming').length,
-    overdue: leads.filter(l => l.status === 'Overdue').length,
-    completed: leads.filter(l => l.status === 'Completed').length,
-  }
+  const statusData = stats?.statusCounts || {};
+  const owners = Object.entries(stats?.ownerCounts || {}).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header agentName={agentName} onRefresh={refresh} />
-      
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* View Tabs */}
-        <div className="mb-6 border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8">
-            <button
-              onClick={() => setActiveView('new-leads')}
-              className={`
-                py-4 px-1 border-b-2 font-medium text-sm transition-colors
-                ${activeView === 'new-leads'
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }
-              `}
-            >
-              <div className="flex items-center">
-                <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                Real-Time Dashboard
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveView('follow-ups')}
-              className={`
-                py-4 px-1 border-b-2 font-medium text-sm transition-colors
-                ${activeView === 'follow-ups'
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }
-              `}
-            >
-              <div className="flex items-center">
-                <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                Follow-Ups Management
-              </div>
-            </button>
-          </nav>
+    <AppLayout>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Sales Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Real-time overview • Last updated: {lastUpdate.toLocaleTimeString()}
+          </p>
+        </div>
+        <button
+          onClick={loadStats}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
+
+      {/* Error State */}
+      {error && (
+        <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-xl mb-6 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4" />
+          {error}
+        </div>
+      )}
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="glass-card p-5 rounded-2xl">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-muted-foreground">Total Leads</span>
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Users className="w-4 h-4 text-blue-600" />
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-foreground">
+            {loading ? '...' : (stats?.totalLeads || 0).toLocaleString()}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">From Google Sheets DB</p>
         </div>
 
-        {activeView === 'new-leads' ? (
-          <NewLeadsDashboard />
-        ) : (
-          <>
-            <FilterBar 
-              activeFilter={activeFilter} 
-              onFilterChange={setActiveFilter}
-              counts={counts}
-            />
+        <div className="glass-card p-5 rounded-2xl">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-muted-foreground">Active Pipeline</span>
+            <div className="p-2 bg-purple-100 rounded-lg">
+              <TrendingUp className="w-4 h-4 text-purple-600" />
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-foreground">
+            {loading ? '...' : (
+              (statusData['Working'] || 0) +
+              (statusData['Potential'] || 0) +
+              (statusData['MQL'] || 0) +
+              (statusData['SQL'] || 0)
+            ).toLocaleString()}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">Working + MQL + SQL</p>
+        </div>
 
-            {loading && <LoadingSpinner />}
-            
-            {error && <ErrorMessage message={error} onRetry={refresh} />}
+        <div className="glass-card p-5 rounded-2xl">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-muted-foreground">PO Received</span>
+            <div className="p-2 bg-green-100 rounded-lg">
+              <DollarSign className="w-4 h-4 text-green-600" />
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-green-600">
+            {loading ? '...' : (statusData['PO RCVD'] || 0).toLocaleString()}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">Closed orders</p>
+        </div>
 
-            {!loading && !error && (
-              <>
-                {filteredLeads.length === 0 ? (
-                  <div className="bg-white rounded-lg shadow p-12 text-center">
-                    <div className="text-gray-400 mb-2">
-                      <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      </svg>
-                    </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-1">No leads found</h3>
-                    <p className="text-gray-500">
-                      {activeFilter === 'All' 
-                        ? 'No leads are assigned to you yet.'
-                        : `No ${activeFilter.toLowerCase()} follow-ups.`
-                      }
-                    </p>
-                  </div>
-                ) : (
-                  <LeadsTable 
-                    leads={filteredLeads}
-                    onUpdate={updateFollowUp}
-                    onComplete={completeFollowUp}
-                  />
-                )}
-              </>
-            )}
-          </>
-        )}
+        <div className="glass-card p-5 rounded-2xl">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-muted-foreground">Total PO Value</span>
+            <div className="p-2 bg-amber-100 rounded-lg">
+              <DollarSign className="w-4 h-4 text-amber-600" />
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-foreground">
+            ₹{loading ? '...' : ((stats?.totalPOValue || 0) / 100000).toFixed(1)}L
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">Lifetime revenue</p>
+        </div>
       </div>
-    </div>
-  )
+
+      {/* Two Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Status Distribution */}
+        <div className="bg-card rounded-2xl border border-border p-5">
+          <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-4">
+            Pipeline Distribution
+          </h2>
+          <div className="space-y-3">
+            {Object.entries(statusData)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 8)
+              .map(([status, count]) => {
+                const total = stats?.totalLeads || 1;
+                const percentage = Math.round((count / total) * 100);
+                return (
+                  <div key={status}>
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <span className="text-foreground">{status}</span>
+                      <span className="text-muted-foreground">{count.toLocaleString()} ({percentage}%)</span>
+                    </div>
+                    <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all duration-500"
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+
+        {/* Top Owners */}
+        <div className="bg-card rounded-2xl border border-border p-5">
+          <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-4">
+            Top Sales Owners
+          </h2>
+          <div className="space-y-3">
+            {owners.map(([owner, count], index) => (
+              <div key={owner} className="flex items-center gap-3 p-3 bg-secondary/30 rounded-xl">
+                <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">
+                  {index + 1}
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-foreground">{owner}</p>
+                  <p className="text-xs text-muted-foreground">{count.toLocaleString()} leads</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-medium text-foreground">
+                    {Math.round((count / (stats?.totalLeads || 1)) * 100)}%
+                  </p>
+                </div>
+              </div>
+            ))}
+            {owners.length === 0 && !loading && (
+              <p className="text-sm text-muted-foreground text-center py-4">No data available</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="mt-6 bg-gradient-to-r from-primary/10 to-accent/10 rounded-2xl p-5 border border-border">
+        <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide mb-4">
+          Quick Actions
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <a href="/leads" className="p-4 bg-background rounded-xl text-center hover:shadow-md transition-shadow">
+            <Users className="w-6 h-6 mx-auto mb-2 text-primary" />
+            <p className="text-sm font-medium">View All Leads</p>
+          </a>
+          <a href="/leads?status=New" className="p-4 bg-background rounded-xl text-center hover:shadow-md transition-shadow">
+            <Phone className="w-6 h-6 mx-auto mb-2 text-blue-600" />
+            <p className="text-sm font-medium">New Leads</p>
+          </a>
+          <a href="/leads?status=MQL" className="p-4 bg-background rounded-xl text-center hover:shadow-md transition-shadow">
+            <TrendingUp className="w-6 h-6 mx-auto mb-2 text-purple-600" />
+            <p className="text-sm font-medium">MQL Pipeline</p>
+          </a>
+          <a href="/leads?status=PO RCVD" className="p-4 bg-background rounded-xl text-center hover:shadow-md transition-shadow">
+            <DollarSign className="w-6 h-6 mx-auto mb-2 text-green-600" />
+            <p className="text-sm font-medium">Won Deals</p>
+          </a>
+        </div>
+      </div>
+    </AppLayout>
+  );
 }
-
-export default Dashboard
-
