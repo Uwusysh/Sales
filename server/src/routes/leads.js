@@ -1,64 +1,44 @@
 import express from 'express';
-import { getSheetsService } from '../services/sheetsService.js';
+import { getEnhancedSheetsService } from '../services/sheetsService.js';
+import leadIdGenerator from '../utils/leadIdGenerator.js';
 
 const router = express.Router();
 
-// Cache for leads data
+// Cache reference from service
 let leadsCache = {
   data: null,
   lastFetch: 0,
-  ttl: 30000 // 30 seconds cache
+  ttl: 30000
 };
 
 /**
  * GET /api/leads
- * Fetch all leads with optional filters
+ * Fetch all leads with filters, search, sorting, and pagination
  */
 router.get('/', async (req, res, next) => {
   try {
-    const { status, owner, search, limit = 100, offset = 0 } = req.query;
+    const {
+      status,
+      owner,
+      location,
+      search,
+      sortBy = 'date',
+      sortOrder = 'desc',
+      limit = 100,
+      offset = 0,
+      followUpToday,
+      srfIncomplete
+    } = req.query;
 
-    // Check cache
+    const service = getEnhancedSheetsService();
     const now = Date.now();
-    if (!leadsCache.data || (now - leadsCache.lastFetch) > leadsCache.ttl) {
-      console.log('📥 Fetching fresh leads from Google Sheets...');
-      const service = getSheetsService();
-      const sheet = await service.getLeadsSheet();
-      const rows = await sheet.getRows();
 
-      leadsCache.data = rows.map(row => ({
-        id: row.get('Enquiry_Code') || row.rowNumber,
-        enquiry_code: row.get('Enquiry_Code'),
-        date: row.get('Date'),
-        lead_owner: row.get('Lead_Owner'),
-        lead_source: row.get('Lead_Source'),
-        client_company: row.get('Client_Company_Name'),
-        client_person: row.get('Client_Person_Name'),
-        client_number: row.get('Client_Number'),
-        client_email: row.get('Client_Mail_ID'),
-        industry: row.get('Industry'),
-        product: row.get('Product'),
-        size: row.get('Size'),
-        location: row.get('Location'),
-        status: row.get('Status') || 'New',
-        mql_status: row.get('MQL_Status'),
-        sql_date: row.get('SQL_Date'),
-        po_date: row.get('PO_Date'),
-        lost_date: row.get('Lost_Date'),
-        remarks: row.get('Remarks'),
-        quantity: row.get('Quantity'),
-        expected_closure: row.get('Expected_Closure'),
-        budget: row.get('Client_Budget_Lead_Value'),
-        sales_owner: row.get('Sales_Owner'),
-        follow_up_date: row.get('Follow_Up_Date'),
-        follow_up_remarks: row.get('Follow_Up_Remarks'),
-        srf_pdf_link: row.get('SRF_PDF_Link'),
-        quotation_link: row.get('Quotation_Link'),
-        po_number: row.get('PO_Number'),
-        po_value: row.get('PO_Value'),
-        order_number: row.get('Order_Number'),
-        _rowNumber: row.rowNumber
-      }));
+    // Get leads with caching
+    const isStale = !leadsCache.data || (now - leadsCache.lastFetch) > leadsCache.ttl;
+
+    if (isStale) {
+      console.log('📥 Fetching fresh leads from Google Sheets...');
+      leadsCache.data = await service.getLeads(true);
       leadsCache.lastFetch = now;
       console.log(`✅ Cached ${leadsCache.data.length} leads`);
     }
@@ -66,28 +46,106 @@ router.get('/', async (req, res, next) => {
     let filteredLeads = [...leadsCache.data];
 
     // Apply filters
-    if (status && status !== 'all') {
+    if (status && status !== 'all' && status !== '') {
+      const statusLower = status.toLowerCase();
       filteredLeads = filteredLeads.filter(l =>
-        l.status?.toLowerCase().includes(status.toLowerCase())
-      );
-    }
-    if (owner) {
-      filteredLeads = filteredLeads.filter(l =>
-        l.lead_owner?.toLowerCase().includes(owner.toLowerCase())
-      );
-    }
-    if (search) {
-      const searchLower = search.toLowerCase();
-      filteredLeads = filteredLeads.filter(l =>
-        l.client_company?.toLowerCase().includes(searchLower) ||
-        l.client_person?.toLowerCase().includes(searchLower) ||
-        l.client_number?.includes(search) ||
-        l.enquiry_code?.toLowerCase().includes(searchLower) ||
-        l.location?.toLowerCase().includes(searchLower)
+        String(l.status || '').toLowerCase() === statusLower
       );
     }
 
-    // Get status counts for buckets
+    if (owner && owner !== 'all' && owner !== '') {
+      const ownerLower = owner.toLowerCase();
+      filteredLeads = filteredLeads.filter(l =>
+        String(l.lead_owner || '').toLowerCase().includes(ownerLower) ||
+        String(l.sales_owner || '').toLowerCase().includes(ownerLower)
+      );
+    }
+
+    if (location && location !== 'all' && location !== '') {
+      const locationLower = location.toLowerCase();
+      filteredLeads = filteredLeads.filter(l =>
+        String(l.location || '').toLowerCase().includes(locationLower)
+      );
+    }
+
+    if (search) {
+      const searchLower = String(search).toLowerCase();
+      filteredLeads = filteredLeads.filter(l => {
+        const company = String(l.client_company || '').toLowerCase();
+        const person = String(l.client_person || '').toLowerCase();
+        const number = String(l.client_number || '').toLowerCase();
+        const email = String(l.client_email || '').toLowerCase();
+        const code = String(l.enquiry_code || '').toLowerCase();
+        const id = String(l.lead_id || '').toLowerCase();
+        const loc = String(l.location || '').toLowerCase();
+        const prod = String(l.product || '').toLowerCase();
+        const rem = String(l.remarks || '').toLowerCase();
+
+        return company.includes(searchLower) ||
+          person.includes(searchLower) ||
+          number.includes(searchLower) ||
+          email.includes(searchLower) ||
+          code.includes(searchLower) ||
+          id.includes(searchLower) ||
+          loc.includes(searchLower) ||
+          prod.includes(searchLower) ||
+          rem.includes(searchLower);
+      });
+    }
+
+    // Filter: Today's follow-ups
+    if (followUpToday === 'true') {
+      const today = new Date().toISOString().split('T')[0];
+      filteredLeads = filteredLeads.filter(l => l.follow_up_date === today);
+    }
+
+    // Filter: Incomplete SRF
+    if (srfIncomplete === 'true') {
+      filteredLeads = filteredLeads.filter(l => {
+        const pct = parseInt(l.srf_completion_pct) || 0;
+        return pct < 100;
+      });
+    }
+
+    // Sorting
+    filteredLeads.sort((a, b) => {
+      let valA, valB;
+
+      switch (sortBy) {
+        case 'date':
+          valA = a.date || a.created_at || '';
+          valB = b.date || b.created_at || '';
+          break;
+        case 'company':
+          valA = a.client_company || '';
+          valB = b.client_company || '';
+          break;
+        case 'status':
+          valA = a.status || 'New';
+          valB = b.status || 'New';
+          break;
+        case 'owner':
+          valA = a.lead_owner || '';
+          valB = b.lead_owner || '';
+          break;
+        case 'followup':
+          valA = a.follow_up_date || '';
+          valB = b.follow_up_date || '';
+          break;
+        case 'value':
+          valA = parseFloat(String(a.budget || a.po_value || '0').replace(/[^0-9.-]/g, '')) || 0;
+          valB = parseFloat(String(b.budget || b.po_value || '0').replace(/[^0-9.-]/g, '')) || 0;
+          return sortOrder === 'desc' ? valB - valA : valA - valB;
+        default:
+          valA = a.date || '';
+          valB = b.date || '';
+      }
+
+      const comparison = valA.localeCompare(valB);
+      return sortOrder === 'desc' ? -comparison : comparison;
+    });
+
+    // Get status counts for buckets (from all data, not filtered)
     const statusCounts = {};
     leadsCache.data.forEach(l => {
       const s = l.status || 'New';
@@ -106,7 +164,8 @@ router.get('/', async (req, res, next) => {
         limit: Number(limit),
         offset: Number(offset),
         statusCounts,
-        cacheAge: now - leadsCache.lastFetch
+        cacheAge: now - leadsCache.lastFetch,
+        hasMore: Number(offset) + Number(limit) < total
       }
     });
   } catch (error) {
@@ -121,57 +180,63 @@ router.get('/', async (req, res, next) => {
  */
 router.get('/stats', async (req, res, next) => {
   try {
-    // Ensure cache is fresh
-    if (!leadsCache.data) {
-      const service = getSheetsService();
-      const sheet = await service.getLeadsSheet();
-      const rows = await sheet.getRows();
-      leadsCache.data = rows.map(row => ({
-        status: row.get('Status') || 'New',
-        lead_owner: row.get('Lead_Owner'),
-        date: row.get('Date'),
-        po_value: row.get('PO_Value')
-      }));
-      leadsCache.lastFetch = Date.now();
-    }
-
-    const leads = leadsCache.data;
-
-    // Calculate stats
-    const totalLeads = leads.length;
-    const statusCounts = {};
-    const ownerCounts = {};
-    let totalPOValue = 0;
-
-    leads.forEach(l => {
-      // Status counts
-      const status = l.status || 'New';
-      statusCounts[status] = (statusCounts[status] || 0) + 1;
-
-      // Owner counts
-      if (l.lead_owner) {
-        ownerCounts[l.lead_owner] = (ownerCounts[l.lead_owner] || 0) + 1;
-      }
-
-      // PO Value
-      if (l.po_value) {
-        const val = parseFloat(String(l.po_value).replace(/[^0-9.-]/g, ''));
-        if (!isNaN(val)) totalPOValue += val;
-      }
-    });
+    const service = getEnhancedSheetsService();
+    const stats = await service.getStats();
 
     res.json({
       success: true,
-      data: {
-        totalLeads,
-        statusCounts,
-        ownerCounts,
-        totalPOValue,
-        todayLeads: leads.filter(l => {
-          const today = new Date().toISOString().split('T')[0];
-          return l.date === today;
-        }).length
-      }
+      data: stats
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/leads/followups/today
+ * Get today's follow-up tasks
+ */
+router.get('/followups/today', async (req, res, next) => {
+  try {
+    const service = getEnhancedSheetsService();
+    const followups = await service.getTodayFollowUps();
+
+    res.json({
+      success: true,
+      data: followups,
+      count: followups.length
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/leads/check-duplicate
+ * Check for potential duplicates before creating
+ */
+router.get('/check-duplicate', async (req, res, next) => {
+  try {
+    const { phone, company } = req.query;
+
+    if (!phone && !company) {
+      return res.status(400).json({
+        success: false,
+        error: 'Phone or company required for duplicate check'
+      });
+    }
+
+    const service = getEnhancedSheetsService();
+    const existingLeads = await service.getLeads();
+
+    const duplicateCheck = leadIdGenerator.detectDuplicate({
+      client_number: phone,
+      client_company: company
+    }, existingLeads);
+
+    res.json({
+      success: true,
+      data: duplicateCheck
     });
   } catch (error) {
     next(error);
@@ -185,25 +250,122 @@ router.get('/stats', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const service = getSheetsService();
-    const sheet = await service.getLeadsSheet();
-    const rows = await sheet.getRows();
+    const service = getEnhancedSheetsService();
+    const lead = await service.getLeadById(id);
 
-    const row = rows.find(r => r.get('Enquiry_Code') === id);
-
-    if (!row) {
+    if (!lead) {
       return res.status(404).json({ success: false, error: 'Lead not found' });
     }
 
-    // Get all fields for detailed view
-    const lead = {};
-    const headers = sheet.headerValues;
-    headers.forEach(h => {
-      lead[h] = row.get(h);
-    });
-    lead._rowNumber = row.rowNumber;
+    // Get related data (SRF, Quotations)
+    const [quotations] = await Promise.all([
+      service.getQuotations(lead.lead_id || lead.enquiry_code)
+    ]);
 
-    res.json({ success: true, data: lead });
+    res.json({
+      success: true,
+      data: {
+        ...lead,
+        quotations
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/leads
+ * Create a new lead
+ */
+router.post('/', async (req, res, next) => {
+  try {
+    const leadData = req.body;
+
+    // Validate required fields
+    if (!leadData.client_number && !leadData.client_company) {
+      return res.status(400).json({
+        success: false,
+        error: 'Either phone number or company name is required'
+      });
+    }
+
+    const service = getEnhancedSheetsService();
+    const result = await service.createLead(leadData);
+
+    // If duplicate found, return for user confirmation
+    if (result.duplicate) {
+      return res.status(409).json(result);
+    }
+
+    // Invalidate cache
+    leadsCache.data = null;
+
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('Error creating lead:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/leads/force-create
+ * Create lead even if duplicate detected
+ */
+router.post('/force-create', async (req, res, next) => {
+  try {
+    const { leadData, linkToPrevious } = req.body;
+
+    const service = getEnhancedSheetsService();
+
+    // If linking to previous, mark as returning customer
+    if (linkToPrevious) {
+      leadData.is_returning_customer = true;
+      leadData.previous_lead_ids = linkToPrevious;
+    }
+
+    // Generate Lead ID with returning customer flag
+    const leadId = leadIdGenerator.generateLeadId({
+      location: leadData.location,
+      source: linkToPrevious ? 'returning' : leadData.lead_source,
+      owner: leadData.lead_owner,
+      phoneNumber: leadData.client_number
+    });
+
+    // Bypass duplicate check and create
+    const sheet = await service.getOrCreateSheet('Leads Master');
+    const now = new Date().toISOString();
+
+    const newRow = await sheet.addRow({
+      'Lead_ID': leadId,
+      'Enquiry_Code': leadData.enquiry_code || leadId,
+      'Created_At': now,
+      'Updated_At': now,
+      'Date': leadData.date || new Date().toISOString().split('T')[0],
+      'Lead_Owner': leadData.lead_owner || '',
+      'Lead_Source': leadData.lead_source || '',
+      'Client_Company_Name': leadData.client_company || '',
+      'Client_Person_Name': leadData.client_person || '',
+      'Client_Number': leadData.client_number || '',
+      'Client_Mail_ID': leadData.client_email || '',
+      'Industry': leadData.industry || '',
+      'Product': leadData.product || '',
+      'Size': leadData.size || '',
+      'Quantity': leadData.quantity || '',
+      'Location': leadData.location || '',
+      'Status': leadData.status || 'New',
+      'Remarks': leadData.remarks || '',
+      'Is_Returning_Customer': linkToPrevious ? 'Yes' : 'No',
+      'Previous_Lead_IDs': linkToPrevious || ''
+    });
+
+    leadsCache.data = null;
+
+    res.status(201).json({
+      success: true,
+      lead_id: leadId,
+      message: 'Lead created successfully'
+    });
   } catch (error) {
     next(error);
   }
@@ -218,30 +380,92 @@ router.patch('/:id', async (req, res, next) => {
     const { id } = req.params;
     const updates = req.body;
 
-    const service = getSheetsService();
-    const sheet = await service.getLeadsSheet();
-    const rows = await sheet.getRows();
+    const service = getEnhancedSheetsService();
+    const result = await service.updateLead(id, updates);
 
-    const row = rows.find(r => r.get('Enquiry_Code') === id);
-
-    if (!row) {
-      return res.status(404).json({ success: false, error: 'Lead not found' });
+    if (!result.success) {
+      return res.status(404).json(result);
     }
-
-    // Apply updates
-    Object.keys(updates).forEach(key => {
-      row.set(key, updates[key]);
-    });
-
-    await row.save();
 
     // Invalidate cache
     leadsCache.data = null;
 
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * PATCH /api/leads/:id/status
+ * Quick status update
+ */
+router.patch('/:id/status', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { status, remarks } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ success: false, error: 'Status is required' });
+    }
+
+    const service = getEnhancedSheetsService();
+    const updates = { Status: status };
+
+    // Add date stamps based on status
+    const now = new Date().toISOString().split('T')[0];
+    if (status === 'SQL') updates.SQL_Date = now;
+    if (status === 'PO RCVD') updates.PO_Date = now;
+    if (status === 'Lost') {
+      updates.Lost_Date = now;
+      if (remarks) updates.Lost_Reason = remarks;
+    }
+    if (remarks) updates.Remarks = remarks;
+
+    const result = await service.updateLead(id, updates);
+    leadsCache.data = null;
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/leads/:id/followup
+ * Schedule a follow-up for a lead
+ */
+router.post('/:id/followup', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const followUpData = req.body;
+
+    const service = getEnhancedSheetsService();
+    const lead = await service.getLeadById(id);
+
+    if (!lead) {
+      return res.status(404).json({ success: false, error: 'Lead not found' });
+    }
+
+    // Create follow-up entry
+    const result = await service.createFollowUp({
+      lead_id: lead.lead_id || lead.enquiry_code,
+      client_name: lead.client_person || lead.client_company,
+      client_number: lead.client_number,
+      ...followUpData
+    });
+
+    // Update lead's follow-up date
+    await service.updateLead(id, {
+      Follow_Up_Date: followUpData.follow_up_date
+    });
+
+    leadsCache.data = null;
+
     res.json({
       success: true,
-      message: 'Lead updated successfully',
-      data: updates
+      message: 'Follow-up scheduled',
+      data: result
     });
   } catch (error) {
     next(error);
@@ -255,7 +479,31 @@ router.patch('/:id', async (req, res, next) => {
 router.post('/refresh', async (req, res) => {
   leadsCache.data = null;
   leadsCache.lastFetch = 0;
+
+  const service = getEnhancedSheetsService();
+  service.invalidateCache('all');
+
   res.json({ success: true, message: 'Cache invalidated' });
+});
+
+/**
+ * GET /api/leads/sync/status
+ * Get sync status for 2-way sync monitoring
+ */
+router.get('/sync/status', async (req, res, next) => {
+  try {
+    res.json({
+      success: true,
+      data: {
+        cacheAge: Date.now() - leadsCache.lastFetch,
+        cacheValid: leadsCache.data !== null,
+        recordCount: leadsCache.data?.length || 0,
+        lastSync: new Date(leadsCache.lastFetch).toISOString()
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 export default router;

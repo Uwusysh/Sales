@@ -92,6 +92,39 @@ const Login = () => {
             </button>
           </form>
 
+          <div className="mt-8 p-4 bg-primary/5 rounded-2xl border border-primary/10">
+            <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">Demo Credentials</h3>
+            <div className="space-y-2">
+              <div
+                className="flex items-center justify-between text-sm cursor-pointer hover:bg-primary/5 p-2 rounded-lg transition-colors group"
+                onClick={() => {
+                  setUsername('admin')
+                  setPassword('password123')
+                }}
+              >
+                <div>
+                  <span className="text-muted-foreground">User:</span>
+                  <span className="ml-2 font-mono text-foreground">admin</span>
+                </div>
+                <div className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                  Click to fill
+                </div>
+              </div>
+              <div
+                className="flex items-center justify-between text-sm cursor-pointer hover:bg-primary/5 p-2 rounded-lg transition-colors group"
+                onClick={() => {
+                  setUsername('admin')
+                  setPassword('password123')
+                }}
+              >
+                <div>
+                  <span className="text-muted-foreground">Pass:</span>
+                  <span className="ml-2 font-mono text-foreground">password123</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="mt-8 pt-6 border-t border-border/50">
             <p className="text-center text-xs text-muted-foreground">
               Restricted Access. Authorized Personnel Only.
