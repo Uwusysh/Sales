@@ -855,47 +855,230 @@ export class EnhancedSheetsService {
   }
 
   /**
+   * Get leads with follow-up date set to today (from Leads Master)
+   */
+  async getLeadsWithTodayFollowUp(agentName) {
+    const leads = await this.getLeads();
+    const today = new Date().toISOString().split('T')[0];
+    
+    return leads
+      .filter(lead => {
+        const leadOwner = String(lead.lead_owner || '').trim().toLowerCase();
+        const followUpDate = lead.follow_up_date;
+        return leadOwner === agentName.toLowerCase() && followUpDate === today;
+      })
+      .map(lead => ({
+        lead_id: lead.lead_id || lead.enquiry_code,
+        follow_up_date: lead.follow_up_date,
+        follow_up_time: '',
+        sales_owner: lead.lead_owner,
+        lead_owner: lead.lead_owner,
+        client_name: lead.client_person || lead.client_company,
+        client_number: lead.client_number,
+        follow_up_type: 'Call',
+        priority: 'Medium',
+        notes: lead.follow_up_remarks || lead.remarks || '',
+        completed: 'No',
+        lead_status: lead.status,
+        lead_location: lead.location,
+        lead_product: lead.product,
+        is_today: true,
+        is_overdue: false,
+        source: 'leads_master'
+      }));
+  }
+
+  /**
+   * Get leads with overdue follow-up dates (from Leads Master)
+   */
+  async getLeadsWithOverdueFollowUp(agentName) {
+    const leads = await this.getLeads();
+    const today = new Date().toISOString().split('T')[0];
+    
+    return leads
+      .filter(lead => {
+        const leadOwner = String(lead.lead_owner || '').trim().toLowerCase();
+        const followUpDate = lead.follow_up_date;
+        return leadOwner === agentName.toLowerCase() && 
+               followUpDate && 
+               followUpDate < today &&
+               lead.status !== 'PO RCVD' && 
+               lead.status !== 'Lost' &&
+               lead.status !== 'Closed';
+      })
+      .map(lead => ({
+        lead_id: lead.lead_id || lead.enquiry_code,
+        follow_up_date: lead.follow_up_date,
+        follow_up_time: '',
+        sales_owner: lead.lead_owner,
+        lead_owner: lead.lead_owner,
+        client_name: lead.client_person || lead.client_company,
+        client_number: lead.client_number,
+        follow_up_type: 'Call',
+        priority: 'High',
+        notes: lead.follow_up_remarks || lead.remarks || '',
+        completed: 'No',
+        lead_status: lead.status,
+        lead_location: lead.location,
+        lead_product: lead.product,
+        is_today: false,
+        is_overdue: true,
+        source: 'leads_master'
+      }));
+  }
+
+  /**
+   * Get all active follow-ups for a specific agent (combined from both sources)
+   */
+  async getAllActiveFollowUpsForAgent(agentName) {
+    const [dbFollowups, leads] = await Promise.all([
+      this.getAllActiveFollowUps(agentName),
+      this.getLeads()
+    ]);
+
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Get follow-ups from Leads Master
+    const leadsFollowups = leads
+      .filter(lead => {
+        const leadOwner = String(lead.lead_owner || '').trim().toLowerCase();
+        const followUpDate = lead.follow_up_date;
+        return leadOwner === agentName.toLowerCase() && 
+               followUpDate &&
+               lead.status !== 'PO RCVD' && 
+               lead.status !== 'Lost' &&
+               lead.status !== 'Closed';
+      })
+      .map(lead => ({
+        lead_id: lead.lead_id || lead.enquiry_code,
+        follow_up_date: lead.follow_up_date,
+        follow_up_time: '',
+        sales_owner: lead.lead_owner,
+        lead_owner: lead.lead_owner,
+        client_name: lead.client_person || lead.client_company,
+        client_number: lead.client_number,
+        follow_up_type: 'Call',
+        priority: lead.follow_up_date < today ? 'High' : 'Medium',
+        notes: lead.follow_up_remarks || lead.remarks || '',
+        completed: 'No',
+        lead_status: lead.status,
+        lead_location: lead.location,
+        lead_product: lead.product,
+        is_today: lead.follow_up_date === today,
+        is_overdue: lead.follow_up_date < today,
+        source: 'leads_master',
+        _rowNumber: lead._rowNumber
+      }));
+
+    // Combine and deduplicate (prefer DB entries over Leads Master)
+    const allFollowups = [...dbFollowups, ...leadsFollowups];
+    const uniqueMap = new Map();
+    
+    allFollowups.forEach(f => {
+      const key = f.lead_id;
+      if (!uniqueMap.has(key) || f.source !== 'leads_master') {
+        uniqueMap.set(key, f);
+      }
+    });
+
+    return Array.from(uniqueMap.values()).sort((a, b) => {
+      // Sort: overdue first, then today, then future
+      if (a.is_overdue && !b.is_overdue) return -1;
+      if (!a.is_overdue && b.is_overdue) return 1;
+      if (a.is_today && !b.is_today) return -1;
+      if (!a.is_today && b.is_today) return 1;
+      return new Date(a.follow_up_date) - new Date(b.follow_up_date);
+    });
+  }
+
+  /**
    * Mark a follow-up as completed
+   * Updates both Daily Follow-up DB and Leads Master
    */
   async completeFollowUp(leadId, followUpDate, outcome = '', nextFollowUpDate = null) {
-    const sheet = await this.getOrCreateSheet('Daily Follow-up DB');
-    const rows = await this.withRetry(async () => sheet.getRows(), 'completeFollowUp-fetch');
+    const completionTimestamp = new Date().toISOString();
+    let dbEntryFound = false;
 
-    // Find the specific follow-up entry
-    const row = rows.find(r =>
-      r.get('Lead_ID') === leadId &&
-      r.get('Follow_Up_Date') === followUpDate &&
-      r.get('Completed') !== 'Yes'
+    // Try to update Daily Follow-up DB entry if it exists
+    try {
+      const sheet = await this.getOrCreateSheet('Daily Follow-up DB');
+      const rows = await this.withRetry(async () => sheet.getRows(), 'completeFollowUp-fetch');
+
+      // Find the specific follow-up entry
+      const row = rows.find(r =>
+        r.get('Lead_ID') === leadId &&
+        r.get('Follow_Up_Date') === followUpDate &&
+        r.get('Completed') !== 'Yes'
+      );
+
+      if (row) {
+        dbEntryFound = true;
+        // Mark as completed with timestamp
+        row.set('Completed', 'Yes');
+        row.set('Status_After', outcome || 'Completed');
+        
+        // Add completion note with timestamp
+        const existingNotes = row.get('Notes') || '';
+        const completionNote = `\n[COMPLETED ${new Date().toLocaleString('en-IN')}] ${outcome || 'Marked as done'}`;
+        row.set('Notes', existingNotes + completionNote);
+
+        await this.withRetry(async () => {
+          await row.save();
+        }, 'completeFollowUp-save');
+      }
+    } catch (err) {
+      console.log('No DB entry found for follow-up, will update Leads Master only');
+    }
+
+    // Always update Leads Master - clear or set new follow-up date
+    const leadSheet = await this.getOrCreateSheet('Leads Master');
+    const leadRows = await this.withRetry(async () => leadSheet.getRows(), 'completeFollowUp-leadFetch');
+    
+    const leadRow = leadRows.find(r =>
+      r.get('Lead_ID') === leadId || r.get('Enquiry_Code') === leadId
     );
 
-    if (!row) {
-      return { success: false, error: 'Follow-up entry not found or already completed' };
-    }
+    if (leadRow) {
+      // Update follow-up date (clear if no next date, or set new date)
+      if (nextFollowUpDate) {
+        leadRow.set('Follow_Up_Date', nextFollowUpDate);
+        leadRow.set('Follow_Up_Remarks', `Next: ${outcome || 'Follow-up scheduled'}`);
+      } else {
+        // Clear the follow-up date since it's completed
+        leadRow.set('Follow_Up_Date', '');
+        leadRow.set('Follow_Up_Remarks', `[${new Date().toLocaleDateString('en-IN')}] ${outcome || 'Completed'}`);
+      }
+      leadRow.set('Updated_At', completionTimestamp);
+      
+      // Append to remarks for tracking
+      const existingRemarks = leadRow.get('Remarks') || '';
+      const completionRemark = ` | F/U Done: ${new Date().toLocaleDateString('en-IN')} - ${outcome || 'Completed'}`;
+      if (!existingRemarks.includes(completionRemark.substring(0, 20))) {
+        leadRow.set('Remarks', existingRemarks + completionRemark);
+      }
 
-    // Mark as completed
-    row.set('Completed', 'Yes');
-    if (outcome) {
-      const existingNotes = row.get('Notes') || '';
-      row.set('Notes', existingNotes + '\n[COMPLETED] ' + outcome);
-    }
-    row.set('Status_After', outcome || 'Completed');
-
-    await this.withRetry(async () => {
-      await row.save();
-    }, 'completeFollowUp-save');
-
-    // Update lead's follow-up date if next date is provided
-    if (nextFollowUpDate) {
-      await this.updateLead(leadId, {
-        Follow_Up_Date: nextFollowUpDate
-      });
+      await this.withRetry(async () => {
+        await leadRow.save();
+      }, 'completeFollowUp-leadSave');
     }
 
     // Invalidate caches
     this.cache.followups.data = null;
     this.cache.leads.data = null;
 
-    return { success: true, message: 'Follow-up marked as completed' };
+    // Log sync action
+    await this.logSync('UPDATE', 'FollowUp', leadId, 
+      { follow_up_date: followUpDate, completed: 'No' },
+      { completed: 'Yes', completion_timestamp: completionTimestamp, next_follow_up: nextFollowUpDate },
+      'Dashboard'
+    );
+
+    return { 
+      success: true, 
+      message: 'Follow-up marked as completed',
+      completedAt: completionTimestamp,
+      nextFollowUpDate: nextFollowUpDate || null
+    };
   }
 
   // ============ QUOTATION OPERATIONS ============
