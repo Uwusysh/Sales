@@ -15,7 +15,8 @@ import {
     CheckCircle2,
     Bell,
     Settings,
-    ChevronDown
+    ChevronDown,
+    Clock
 } from 'lucide-react';
 import { getSyncStatus } from '../../lib/api';
 
@@ -33,6 +34,13 @@ const navItems = [
         icon: Users,
         enabled: true,
         badge: 'Live'
+    },
+    {
+        label: 'Follow-Ups',
+        href: '/followups',
+        icon: Clock,
+        enabled: true,
+        badge: 'New'
     },
     {
         label: 'SRF',

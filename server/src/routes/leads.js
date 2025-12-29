@@ -198,14 +198,115 @@ router.get('/stats', async (req, res, next) => {
  */
 router.get('/followups/today', async (req, res, next) => {
   try {
+    const { owner } = req.query;
     const service = getEnhancedSheetsService();
     const followups = await service.getTodayFollowUps();
 
+    // Filter by owner if specified
+    const filtered = owner && owner !== 'all'
+      ? followups.filter(f => f.sales_owner === owner)
+      : followups;
+
     res.json({
       success: true,
-      data: followups,
-      count: followups.length
+      data: filtered,
+      count: filtered.length
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/leads/followups/overdue
+ * Get overdue follow-ups
+ */
+router.get('/followups/overdue', async (req, res, next) => {
+  try {
+    const { owner } = req.query;
+    const service = getEnhancedSheetsService();
+    const followups = await service.getOverdueFollowUps();
+
+    // Filter by owner if specified
+    const filtered = owner && owner !== 'all'
+      ? followups.filter(f => f.sales_owner === owner)
+      : followups;
+
+    res.json({
+      success: true,
+      data: filtered,
+      count: filtered.length
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/leads/followups/active
+ * Get all active follow-ups with enriched lead data
+ */
+router.get('/followups/active', async (req, res, next) => {
+  try {
+    const { owner } = req.query;
+    const service = getEnhancedSheetsService();
+    const followups = await service.getAllActiveFollowUps(owner);
+
+    // Categorize for dashboard
+    const today = new Date().toISOString().split('T')[0];
+    const categorized = {
+      overdue: followups.filter(f => f.is_overdue),
+      today: followups.filter(f => f.is_today),
+      upcoming: followups.filter(f => !f.is_overdue && !f.is_today),
+      all: followups
+    };
+
+    res.json({
+      success: true,
+      data: categorized,
+      counts: {
+        overdue: categorized.overdue.length,
+        today: categorized.today.length,
+        upcoming: categorized.upcoming.length,
+        total: followups.length
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/leads/followups/complete
+ * Mark a follow-up as completed
+ */
+router.post('/followups/complete', async (req, res, next) => {
+  try {
+    const { lead_id, follow_up_date, outcome, next_follow_up_date } = req.body;
+
+    if (!lead_id || !follow_up_date) {
+      return res.status(400).json({
+        success: false,
+        error: 'lead_id and follow_up_date are required'
+      });
+    }
+
+    const service = getEnhancedSheetsService();
+    const result = await service.completeFollowUp(
+      lead_id,
+      follow_up_date,
+      outcome,
+      next_follow_up_date
+    );
+
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    // Invalidate cache
+    leadsCache.data = null;
+
+    res.json(result);
   } catch (error) {
     next(error);
   }

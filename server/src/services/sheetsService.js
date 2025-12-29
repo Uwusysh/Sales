@@ -766,6 +766,138 @@ export class EnhancedSheetsService {
     return { success: true, rowNumber: newRow.rowNumber };
   }
 
+  /**
+   * Get overdue follow-ups (past due date and not completed)
+   */
+  async getOverdueFollowUps() {
+    const sheet = await this.getOrCreateSheet('Daily Follow-up DB');
+    const rows = await this.withRetry(async () => sheet.getRows(), 'getOverdueFollowUps');
+
+    const today = new Date().toISOString().split('T')[0];
+
+    return rows
+      .filter(row => {
+        const followUpDate = row.get('Follow_Up_Date');
+        const completed = row.get('Completed');
+        return followUpDate && followUpDate < today && completed !== 'Yes';
+      })
+      .map(row => ({
+        lead_id: row.get('Lead_ID'),
+        follow_up_date: row.get('Follow_Up_Date'),
+        follow_up_time: row.get('Follow_Up_Time'),
+        sales_owner: row.get('Sales_Owner'),
+        client_name: row.get('Client_Name'),
+        client_number: row.get('Client_Number'),
+        follow_up_type: row.get('Follow_Up_Type'),
+        priority: row.get('Priority'),
+        notes: row.get('Notes'),
+        completed: row.get('Completed'),
+        _rowNumber: row.rowNumber
+      }))
+      .sort((a, b) => new Date(a.follow_up_date) - new Date(b.follow_up_date)); // Oldest first
+  }
+
+  /**
+   * Get all active follow-ups with enriched lead data
+   */
+  async getAllActiveFollowUps(ownerFilter = null) {
+    const sheet = await this.getOrCreateSheet('Daily Follow-up DB');
+    const rows = await this.withRetry(async () => sheet.getRows(), 'getAllActiveFollowUps');
+    const leads = await this.getLeads();
+
+    const today = new Date().toISOString().split('T')[0];
+
+    // Create a map for quick lead lookup
+    const leadsMap = new Map();
+    leads.forEach(lead => {
+      const key = lead.lead_id || lead.enquiry_code;
+      if (key) leadsMap.set(key, lead);
+    });
+
+    return rows
+      .filter(row => row.get('Completed') !== 'Yes')
+      .filter(row => !ownerFilter || row.get('Sales_Owner') === ownerFilter)
+      .map(row => {
+        const leadId = row.get('Lead_ID');
+        const lead = leadsMap.get(leadId);
+        const followUpDate = row.get('Follow_Up_Date');
+
+        return {
+          lead_id: leadId,
+          follow_up_date: followUpDate,
+          follow_up_time: row.get('Follow_Up_Time'),
+          sales_owner: row.get('Sales_Owner'),
+          client_name: row.get('Client_Name'),
+          client_number: row.get('Client_Number'),
+          follow_up_type: row.get('Follow_Up_Type'),
+          priority: row.get('Priority'),
+          notes: row.get('Notes'),
+          completed: row.get('Completed'),
+          created_at: row.get('Created_At'),
+          _rowNumber: row.rowNumber,
+          // Enriched lead data
+          lead_status: lead?.status,
+          lead_location: lead?.location,
+          lead_product: lead?.product,
+          // Status flags
+          is_today: followUpDate === today,
+          is_overdue: followUpDate && followUpDate < today
+        };
+      })
+      .sort((a, b) => {
+        // Sort: overdue first, then today, then future
+        if (a.is_overdue && !b.is_overdue) return -1;
+        if (!a.is_overdue && b.is_overdue) return 1;
+        if (a.is_today && !b.is_today) return -1;
+        if (!a.is_today && b.is_today) return 1;
+        return new Date(a.follow_up_date) - new Date(b.follow_up_date);
+      });
+  }
+
+  /**
+   * Mark a follow-up as completed
+   */
+  async completeFollowUp(leadId, followUpDate, outcome = '', nextFollowUpDate = null) {
+    const sheet = await this.getOrCreateSheet('Daily Follow-up DB');
+    const rows = await this.withRetry(async () => sheet.getRows(), 'completeFollowUp-fetch');
+
+    // Find the specific follow-up entry
+    const row = rows.find(r =>
+      r.get('Lead_ID') === leadId &&
+      r.get('Follow_Up_Date') === followUpDate &&
+      r.get('Completed') !== 'Yes'
+    );
+
+    if (!row) {
+      return { success: false, error: 'Follow-up entry not found or already completed' };
+    }
+
+    // Mark as completed
+    row.set('Completed', 'Yes');
+    if (outcome) {
+      const existingNotes = row.get('Notes') || '';
+      row.set('Notes', existingNotes + '\n[COMPLETED] ' + outcome);
+    }
+    row.set('Status_After', outcome || 'Completed');
+
+    await this.withRetry(async () => {
+      await row.save();
+    }, 'completeFollowUp-save');
+
+    // Update lead's follow-up date if next date is provided
+    if (nextFollowUpDate) {
+      await this.updateLead(leadId, {
+        Follow_Up_Date: nextFollowUpDate
+      });
+    }
+
+    // Invalidate caches
+    this.cache.followups.data = null;
+    this.cache.leads.data = null;
+
+    return { success: true, message: 'Follow-up marked as completed' };
+  }
+
   // ============ QUOTATION OPERATIONS ============
 
   async getQuotations(leadId = null) {

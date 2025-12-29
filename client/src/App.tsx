@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import DashboardPage from './pages/Dashboard'
 import LeadsPage from './pages/Leads'
+import FollowUpsPage from './pages/FollowUps'
 import Login from './pages/Login'
 import { AuthProvider, AgentProvider, useAuth } from './contexts/AgentContext'
 
@@ -72,6 +73,9 @@ function AppContent() {
   const renderPage = () => {
     // Lead pages
     if (currentPath.startsWith('/leads')) return <LeadsPage />
+
+    // Follow-ups page
+    if (currentPath.startsWith('/followups')) return <FollowUpsPage />
 
     // SRF module (Phase 1)
     if (currentPath.startsWith('/srf')) return (
