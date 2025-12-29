@@ -13,11 +13,16 @@
     "start": "cd server && npm start",
     "install:all": "npm install && cd client && npm install && cd ../server && npm install"
   },
-  "keywords": ["follow-up", "automation", "sales", "crm"],
+  "keywords": [
+    "follow-up",
+    "automation",
+    "sales",
+    "crm"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "typescript": "^5.9.3"
   }
 }
-
