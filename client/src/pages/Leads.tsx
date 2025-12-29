@@ -9,7 +9,8 @@ import {
 } from 'lucide-react';
 import {
     fetchLeads, fetchLeadStats, refreshLeadsCache, updateLeadStatus,
-    Lead, FetchLeadsOptions, formatValue, getRelativeTime
+    Lead, FetchLeadsOptions, formatValue, getRelativeTime,
+    fetchLeadById, scheduleFollowUp
 } from '../lib/api';
 import { AddLeadModal } from '../components/leads/AddLeadModal';
 
@@ -82,10 +83,15 @@ const FollowUpBadge: React.FC<{ date: string }> = ({ date }) => {
 
     if (isPast) {
         return (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded-full">
-                <AlertCircle className="w-3 h-3" />
-                Overdue
-            </span>
+            <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                    {new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded-full">
+                    <AlertCircle className="w-3 h-3" />
+                    Overdue
+                </span>
+            </div>
         );
     }
 
@@ -129,6 +135,16 @@ export default function LeadsPage() {
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(false);
     const [showAddLeadModal, setShowAddLeadModal] = useState(false);
+
+    // Detail View State
+    const [isDetailLoading, setIsDetailLoading] = useState(false);
+    const [showFollowUpForm, setShowFollowUpForm] = useState(false);
+    const [followUpForm, setFollowUpForm] = useState({
+        date: '',
+        time: '',
+        notes: '',
+        type: 'Call'
+    });
 
     const { user } = useAuth();
     const [viewMode, setViewMode] = useState<'all' | 'my'>('my');
@@ -233,6 +249,53 @@ export default function LeadsPage() {
         } else {
             setSortBy(field);
             setSortOrder('desc');
+        }
+    };
+
+    // Load full details when lead is selected
+    useEffect(() => {
+        if (selectedLead?.id) {
+            // Only fetch if we don't have followups yet or if it was just selected
+            // We can detect if it's "fresh" from the list by checking if followups is undefined
+            if (!selectedLead.followups) {
+                setIsDetailLoading(true);
+                fetchLeadById(selectedLead.id)
+                    .then(res => {
+                        setSelectedLead(prev => prev ? { ...prev, ...res.data } : res.data);
+                    })
+                    .catch(console.error)
+                    .finally(() => setIsDetailLoading(false));
+            }
+        }
+    }, [selectedLead?.id]);
+
+    const handleScheduleFollowUp = async () => {
+        if (!selectedLead || !followUpForm.date) return;
+
+        try {
+            setIsDetailLoading(true);
+            await scheduleFollowUp(selectedLead.id, {
+                follow_up_date: followUpForm.date,
+                follow_up_time: followUpForm.time,
+                notes: followUpForm.notes,
+                follow_up_type: followUpForm.type,
+                sales_owner: user?.agentName || selectedLead.lead_owner
+            });
+
+            // Refresh details
+            const res = await fetchLeadById(selectedLead.id);
+            setSelectedLead(res.data);
+
+            // Reset form
+            setShowFollowUpForm(false);
+            setFollowUpForm({ date: '', time: '', notes: '', type: 'Call' });
+
+            // Refresh list in background
+            loadLeads();
+        } catch (err) {
+            console.error('Failed to schedule follow-up:', err);
+        } finally {
+            setIsDetailLoading(false);
         }
     };
 
@@ -833,13 +896,145 @@ export default function LeadsPage() {
                                 </div>
                             )}
 
-                            {/* Remarks */}
-                            {selectedLead.remarks && (
-                                <div className="bg-secondary/30 rounded-xl p-4">
-                                    <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider mb-2">Remarks</h3>
-                                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">{selectedLead.remarks}</p>
+                            {/* Follow-up Timeline & Actions */}
+                            <div className="bg-secondary/30 rounded-xl p-4">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
+                                        <Clock className="w-4 h-4" />
+                                        Activity Timeline
+                                    </h3>
+                                    {!showFollowUpForm && (
+                                        <button
+                                            onClick={() => setShowFollowUpForm(true)}
+                                            className="text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
+                                        >
+                                            + Add Follow-up
+                                        </button>
+                                    )}
                                 </div>
-                            )}
+
+                                {showFollowUpForm && (
+                                    <div className="bg-background border border-border rounded-lg p-3 mb-4 animate-in slide-in-from-top-2 duration-200">
+                                        <div className="space-y-3">
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <label className="text-[10px] text-muted-foreground uppercase font-semibold mb-1 block">New Date</label>
+                                                    <input
+                                                        type="date"
+                                                        value={followUpForm.date}
+                                                        onChange={e => setFollowUpForm({ ...followUpForm, date: e.target.value })}
+                                                        className="w-full text-sm p-2 rounded border border-border"
+                                                        required
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] text-muted-foreground uppercase font-semibold mb-1 block">Time (Optional)</label>
+                                                    <input
+                                                        type="time"
+                                                        value={followUpForm.time}
+                                                        onChange={e => setFollowUpForm({ ...followUpForm, time: e.target.value })}
+                                                        className="w-full text-sm p-2 rounded border border-border"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] text-muted-foreground uppercase font-semibold mb-1 block">Type</label>
+                                                <select
+                                                    value={followUpForm.type}
+                                                    onChange={e => setFollowUpForm({ ...followUpForm, type: e.target.value })}
+                                                    className="w-full text-sm p-2 rounded border border-border"
+                                                >
+                                                    <option value="Call">Call</option>
+                                                    <option value="WhatsApp">WhatsApp</option>
+                                                    <option value="Email">Email</option>
+                                                    <option value="Meeting">Meeting</option>
+                                                    <option value="Site Visit">Site Visit</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] text-muted-foreground uppercase font-semibold mb-1 block">Notes / Remarks</label>
+                                                <textarea
+                                                    value={followUpForm.notes}
+                                                    onChange={e => setFollowUpForm({ ...followUpForm, notes: e.target.value })}
+                                                    placeholder="What happened? What's next?"
+                                                    className="w-full text-sm p-2 rounded border border-border min-h-[60px]"
+                                                />
+                                            </div>
+                                            <div className="flex justify-end gap-2 pt-2">
+                                                <button
+                                                    onClick={() => setShowFollowUpForm(false)}
+                                                    className="px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary rounded"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    onClick={handleScheduleFollowUp}
+                                                    disabled={!followUpForm.date}
+                                                    className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+                                                >
+                                                    Save Follow-up
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="space-y-4">
+                                    {isDetailLoading ? (
+                                        <div className="flex justify-center py-4">
+                                            <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" />
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {selectedLead.followups && selectedLead.followups.length > 0 ? (
+                                                <div className="relative border-l border-primary/20 ml-2 space-y-6 pl-4 pb-2">
+                                                    {selectedLead.followups.map((fu, idx) => (
+                                                        <div key={idx} className="relative">
+                                                            <div className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-background ${fu.completed === 'Yes' ? 'bg-green-500' :
+                                                                new Date(fu.follow_up_date) < new Date() ? 'bg-red-500' : 'bg-primary'
+                                                                }`} />
+                                                            <div className="flex flex-col gap-1">
+                                                                <div className="flex items-center gap-2 text-xs">
+                                                                    <span className="font-semibold text-foreground">
+                                                                        {new Date(fu.follow_up_date).toLocaleDateString('en-IN', {
+                                                                            day: 'numeric', month: 'short', year: 'numeric'
+                                                                        })}
+                                                                    </span>
+                                                                    <span className="bg-secondary px-1.5 rounded text-[10px] text-muted-foreground">
+                                                                        {fu.follow_up_type}
+                                                                    </span>
+                                                                    {fu.sales_owner && (
+                                                                        <span className="text-muted-foreground text-[10px]">by {fu.sales_owner}</span>
+                                                                    )}
+                                                                </div>
+                                                                {fu.notes && (
+                                                                    <p className="text-sm text-muted-foreground bg-background/50 p-2 rounded border border-border/50">
+                                                                        {fu.notes}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="text-center py-4 text-xs text-muted-foreground">
+                                                    No history found.
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+
+                                    {/* Legacy Remarks Fallback */}
+                                    {selectedLead.remarks && (!selectedLead.followups || selectedLead.followups.length === 0) && (
+                                        <div className="mt-4 pt-4 border-t border-border">
+                                            <p className="text-xs font-semibold text-muted-foreground mb-1">Legacy Remarks</p>
+                                            <p className="text-sm text-foreground whitespace-pre-wrap bg-background p-2 rounded border border-border">
+                                                {selectedLead.remarks}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
 
                             {/* Action Links */}
                             <div className="grid grid-cols-2 gap-2">

@@ -53,6 +53,7 @@ export interface Lead {
   previous_lead_ids: string;
   _rowNumber: number;
   quotations?: Quotation[];
+  followups?: FollowUp[];
 }
 
 export interface Quotation {
@@ -75,6 +76,13 @@ export interface FollowUp {
   priority: string;
   notes: string;
   completed: string;
+  // Enriched fields for active follow-ups
+  lead_status?: string;
+  lead_location?: string;
+  lead_product?: string;
+  is_today?: boolean;
+  is_overdue?: boolean;
+  _rowNumber?: number;
 }
 
 export interface DuplicateCheckResult {
@@ -305,13 +313,94 @@ export async function scheduleFollowUp(leadId: string, followUp: Partial<FollowU
 /**
  * Get today's follow-ups
  */
-export async function fetchTodayFollowUps(): Promise<{ success: boolean; data: FollowUp[]; count: number }> {
-  const response = await fetch(`${API_BASE}/leads/followups/today`, {
+export async function fetchTodayFollowUps(owner?: string): Promise<{ success: boolean; data: FollowUp[]; count: number }> {
+  const query = new URLSearchParams();
+  if (owner) query.set('owner', owner);
+
+  const response = await fetch(`${API_BASE}/leads/followups/today?${query.toString()}`, {
     headers: getAuthHeaders()
   });
 
   if (!response.ok) {
     throw new Error('Failed to fetch follow-ups');
+  }
+
+  return response.json();
+}
+
+/**
+ * Get overdue follow-ups
+ */
+export async function fetchOverdueFollowUps(owner?: string): Promise<{ success: boolean; data: FollowUp[]; count: number }> {
+  const query = new URLSearchParams();
+  if (owner) query.set('owner', owner);
+
+  const response = await fetch(`${API_BASE}/leads/followups/overdue?${query.toString()}`, {
+    headers: getAuthHeaders()
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch overdue follow-ups');
+  }
+
+  return response.json();
+}
+
+/**
+ * Get all active follow-ups with categorization
+ */
+export async function fetchActiveFollowUps(owner?: string): Promise<{
+  success: boolean;
+  data: {
+    overdue: FollowUp[];
+    today: FollowUp[];
+    upcoming: FollowUp[];
+    all: FollowUp[];
+  };
+  counts: {
+    overdue: number;
+    today: number;
+    upcoming: number;
+    total: number;
+  };
+}> {
+  const query = new URLSearchParams();
+  if (owner) query.set('owner', owner);
+
+  const response = await fetch(`${API_BASE}/leads/followups/active?${query.toString()}`, {
+    headers: getAuthHeaders()
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch active follow-ups');
+  }
+
+  return response.json();
+}
+
+/**
+ * Mark a follow-up as completed
+ */
+export async function completeFollowUp(
+  leadId: string,
+  followUpDate: string,
+  outcome?: string,
+  nextFollowUpDate?: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  const response = await fetch(`${API_BASE}/leads/followups/complete`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      lead_id: leadId,
+      follow_up_date: followUpDate,
+      outcome,
+      next_follow_up_date: nextFollowUpDate
+    })
+  });
+
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.error || 'Failed to complete follow-up');
   }
 
   return response.json();
