@@ -1,0 +1,121 @@
+# Generated Users from Lead_Owner Column
+# Generated on: 2025-12-29T07:05:39.535Z
+# Total Users: 17
+# Default Password: 123
+
+
+1. Amisha
+   Username: amisha
+   Password: 123
+   Role: agent
+
+
+2. Anil
+   Username: anil
+   Password: 123
+   Role: agent
+
+
+3. Anjali
+   Username: anjali
+   Password: 123
+   Role: agent
+
+
+4. Gauri
+   Username: gauri
+   Password: 123
+   Role: agent
+
+
+5. Jyotsna
+   Username: jyotsna
+   Password: 123
+   Role: agent
+
+
+6. Manideep
+   Username: manideep
+   Password: 123
+   Role: agent
+
+
+7. Megha
+   Username: megha
+   Password: 123
+   Role: agent
+
+
+8. Milan
+   Username: milan
+   Password: 123
+   Role: agent
+
+
+9. Miloni
+   Username: miloni
+   Password: 123
+   Role: agent
+
+
+10. Nikita
+   Username: nikita
+   Password: 123
+   Role: agent
+
+
+11. Prachi
+   Username: prachi
+   Password: 123
+   Role: agent
+
+
+12. Pushpalata
+   Username: pushpalata
+   Password: 123
+   Role: agent
+
+
+13. Rachana
+   Username: rachana
+   Password: 123
+   Role: agent
+
+
+14. Radheyshyam
+   Username: radheyshyam
+   Password: 123
+   Role: agent
+
+
+15. Sahil
+   Username: sahil
+   Password: 123
+   Role: agent
+
+
+16. Sanaya
+   Username: sanaya
+   Password: 123
+   Role: agent
+
+
+17. Vipul
+   Username: vipul
+   Password: 123
+   Role: agent
+
+
+---
+
+## Login Instructions
+
+1. Go to http://localhost:5173
+2. Enter your username (lowercase, spaces replaced with dots)
+3. Enter password: 123
+4. Click "Sign In"
+
+## Example:
+If your name in Lead_Owner column is: "John Doe"
+Username: john.doe
+Password: 123

@@ -4,10 +4,11 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
+import { authenticateToken } from './middleware/auth.js';
 import authRouter from './routes/auth.js';
 import leadsRouter from './routes/leads.js';
-import followUpRouter from './routes/followUp.js';
-import remindersRouter from './routes/reminders.js';
+// import followUpRouter from './routes/followUp.js';
+import srfRouter from './routes/srf.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,14 +26,14 @@ app.use(cookieParser());
 
 // API Routes
 app.use('/api/auth', authRouter);
-app.use('/api/leads', leadsRouter);
-app.use('/api/follow-up', followUpRouter);
-app.use('/api/reminders', remindersRouter);
+app.use('/api/leads', authenticateToken, leadsRouter); // Protected route
+// app.use('/api/follow-up', followUpRouter);
+app.use('/api/srf', authenticateToken, srfRouter); // Protected route
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+  res.json({
+    status: 'OK',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development'
   });
@@ -42,7 +43,7 @@ app.get('/api/health', (req, res) => {
 if (process.env.NODE_ENV === 'production') {
   const clientBuildPath = path.join(__dirname, '../../client/dist');
   app.use(express.static(clientBuildPath));
-  
+
   app.get('*', (req, res) => {
     res.sendFile(path.join(clientBuildPath, 'index.html'));
   });
