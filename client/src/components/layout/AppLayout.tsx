@@ -15,8 +15,7 @@ import {
     CheckCircle2,
     Bell,
     Settings,
-    ChevronDown,
-    RefreshCw
+    ChevronDown
 } from 'lucide-react';
 import { getSyncStatus } from '../../lib/api';
 
