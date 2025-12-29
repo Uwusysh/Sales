@@ -7,8 +7,7 @@ import {
     MessageSquare, Mail, Video, X
 } from 'lucide-react';
 import {
-    fetchActiveFollowUps, completeFollowUp, FollowUp,
-    fetchLeadById, Lead
+    fetchActiveFollowUps, completeFollowUp, FollowUp
 } from '../lib/api';
 
 // Priority colors
@@ -42,7 +41,6 @@ export default function FollowUpsPage() {
     }>({ overdue: [], today: [], upcoming: [], all: [] });
     const [counts, setCounts] = useState({ overdue: 0, today: 0, upcoming: 0, total: 0 });
     const [selectedFollowUp, setSelectedFollowUp] = useState<FollowUp | null>(null);
-    const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
     const [completionForm, setCompletionForm] = useState({
         outcome: '',
         nextDate: ''
@@ -78,12 +76,7 @@ export default function FollowUpsPage() {
 
     const handleSelectFollowUp = async (followUp: FollowUp) => {
         setSelectedFollowUp(followUp);
-        try {
-            const leadRes = await fetchLeadById(followUp.lead_id);
-            setSelectedLead(leadRes.data);
-        } catch (err) {
-            console.error('Failed to load lead details:', err);
-        }
+        // Note: Lead details could be loaded here if needed for the modal
     };
 
     const handleCompleteFollowUp = async () => {
@@ -100,7 +93,6 @@ export default function FollowUpsPage() {
 
             // Reset and reload
             setSelectedFollowUp(null);
-            setSelectedLead(null);
             setCompletionForm({ outcome: '', nextDate: '' });
             await loadFollowUps();
         } catch (err) {
@@ -382,7 +374,6 @@ export default function FollowUpsPage() {
                         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
                         onClick={() => {
                             setSelectedFollowUp(null);
-                            setSelectedLead(null);
                             setCompletionForm({ outcome: '', nextDate: '' });
                         }}
                     />
@@ -400,7 +391,6 @@ export default function FollowUpsPage() {
                             <button
                                 onClick={() => {
                                     setSelectedFollowUp(null);
-                                    setSelectedLead(null);
                                     setCompletionForm({ outcome: '', nextDate: '' });
                                 }}
                                 className="p-2 hover:bg-secondary rounded-lg"
@@ -463,7 +453,6 @@ export default function FollowUpsPage() {
                             <button
                                 onClick={() => {
                                     setSelectedFollowUp(null);
-                                    setSelectedLead(null);
                                     setCompletionForm({ outcome: '', nextDate: '' });
                                 }}
                                 className="px-4 py-2 text-sm text-muted-foreground hover:bg-secondary rounded-lg"
