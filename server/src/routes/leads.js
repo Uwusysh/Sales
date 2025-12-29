@@ -257,16 +257,18 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Lead not found' });
     }
 
-    // Get related data (SRF, Quotations)
-    const [quotations] = await Promise.all([
-      service.getQuotations(lead.lead_id || lead.enquiry_code)
+    // Get related data (SRF, Quotations, FollowForups)
+    const [quotations, followups] = await Promise.all([
+      service.getQuotations(lead.lead_id || lead.enquiry_code),
+      service.getFollowUps(lead.lead_id || lead.enquiry_code)
     ]);
 
     res.json({
       success: true,
       data: {
         ...lead,
-        quotations
+        quotations,
+        followups
       }
     });
   } catch (error) {

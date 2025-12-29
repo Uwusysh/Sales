@@ -720,6 +720,29 @@ export class EnhancedSheetsService {
       }));
   }
 
+  async getFollowUps(leadId) {
+    const sheet = await this.getOrCreateSheet('Daily Follow-up DB');
+    const rows = await this.withRetry(async () => sheet.getRows(), 'getFollowUps');
+
+    return rows
+      .filter(row => row.get('Lead_ID') === leadId)
+      .map(row => ({
+        lead_id: row.get('Lead_ID'),
+        follow_up_date: row.get('Follow_Up_Date'),
+        follow_up_time: row.get('Follow_Up_Time'),
+        sales_owner: row.get('Sales_Owner'),
+        client_name: row.get('Client_Name'),
+        client_number: row.get('Client_Number'),
+        follow_up_type: row.get('Follow_Up_Type'),
+        priority: row.get('Priority'),
+        notes: row.get('Notes'),
+        completed: row.get('Completed'),
+        created_at: row.get('Created_At'),
+        _rowNumber: row.rowNumber
+      }))
+      .sort((a, b) => new Date(b.follow_up_date) - new Date(a.follow_up_date)); // Sort by date desc
+  }
+
   async createFollowUp(followUpData) {
     const sheet = await this.getOrCreateSheet('Daily Follow-up DB');
 

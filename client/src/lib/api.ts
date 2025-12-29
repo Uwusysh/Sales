@@ -53,6 +53,7 @@ export interface Lead {
   previous_lead_ids: string;
   _rowNumber: number;
   quotations?: Quotation[];
+  followups?: FollowUp[];
 }
 
 export interface Quotation {
