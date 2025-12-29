@@ -4,7 +4,7 @@ import { AppLayout } from '../components/layout/AppLayout';
 import {
     Clock, AlertCircle, CheckCircle, Phone, Calendar,
     RefreshCw, User, MapPin, Package, ChevronRight,
-    MessageSquare, Mail, Video, X
+    MessageSquare, Mail, Video, X, CheckSquare
 } from 'lucide-react';
 import {
     fetchActiveFollowUps, completeFollowUp, FollowUp
@@ -46,6 +46,7 @@ export default function FollowUpsPage() {
         nextDate: ''
     });
     const [viewMode, setViewMode] = useState<'my' | 'all'>('my');
+    const [completingId, setCompletingId] = useState<string | null>(null);
 
     const loadFollowUps = useCallback(async () => {
         try {
@@ -77,6 +78,29 @@ export default function FollowUpsPage() {
     const handleSelectFollowUp = async (followUp: FollowUp) => {
         setSelectedFollowUp(followUp);
         // Note: Lead details could be loaded here if needed for the modal
+    };
+
+    // Quick complete - single click to mark as done
+    const handleQuickComplete = async (followUp: FollowUp, e: React.MouseEvent) => {
+        e.stopPropagation(); // Don't open the modal
+        
+        const uniqueId = followUp.lead_id + followUp.follow_up_date;
+        setCompletingId(uniqueId);
+        
+        try {
+            await completeFollowUp(
+                followUp.lead_id,
+                followUp.follow_up_date,
+                'Quick completed',
+                undefined
+            );
+            // Reload to refresh the list
+            await loadFollowUps();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to complete follow-up');
+        } finally {
+            setCompletingId(null);
+        }
     };
 
     const handleCompleteFollowUp = async () => {
@@ -221,12 +245,12 @@ export default function FollowUpsPage() {
                 {/* Table Header */}
                 <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 bg-muted/30 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     <div className="col-span-3">Client</div>
-                    <div className="col-span-2">Date & Time</div>
+                    <div className="col-span-2">Follow-Up Date</div>
                     <div className="col-span-1">Type</div>
                     <div className="col-span-2">Owner</div>
                     <div className="col-span-2">Lead Info</div>
                     <div className="col-span-1">Priority</div>
-                    <div className="col-span-1">Action</div>
+                    <div className="col-span-1 text-right">Complete</div>
                 </div>
 
                 {/* Loading State */}
@@ -347,8 +371,24 @@ export default function FollowUpsPage() {
                                 )}
                             </div>
 
-                            {/* Action */}
-                            <div className="col-span-1 flex items-center justify-end">
+                            {/* Action - Mark Complete Button */}
+                            <div className="col-span-1 flex items-center justify-end gap-2">
+                                <button
+                                    onClick={(e) => handleQuickComplete(followUp, e)}
+                                    disabled={completingId === (followUp.lead_id + followUp.follow_up_date)}
+                                    className={`p-2 rounded-lg transition-all border ${
+                                        completingId === (followUp.lead_id + followUp.follow_up_date)
+                                            ? 'bg-green-100 border-green-300 cursor-wait'
+                                            : 'hover:bg-green-50 border-transparent hover:border-green-200'
+                                    }`}
+                                    title="Mark as Completed"
+                                >
+                                    {completingId === (followUp.lead_id + followUp.follow_up_date) ? (
+                                        <RefreshCw className="w-4 h-4 text-green-600 animate-spin" />
+                                    ) : (
+                                        <CheckSquare className="w-4 h-4 text-green-600" />
+                                    )}
+                                </button>
                                 <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                             </div>
                         </div>

@@ -232,19 +232,31 @@ router.get('/stats', async (req, res, next) => {
  */
 router.get('/followups/today', async (req, res, next) => {
   try {
-    const { owner } = req.query;
+    const authenticatedAgent = req.user.agentName;
     const service = getEnhancedSheetsService();
-    const allFollowups = await service.getTodayFollowUps();
     
-    // Filter by owner if specified
-    const filtered = owner && owner !== 'all'
-      ? allFollowups.filter(f => f.sales_owner === owner)
-      : allFollowups;
+    // Get follow-ups from both Daily Follow-up DB and Leads Master
+    const [dbFollowups, leadsFollowups] = await Promise.all([
+      service.getTodayFollowUps(),
+      service.getLeadsWithTodayFollowUp(authenticatedAgent)
+    ]);
+    
+    // Filter DB followups by agent's leads
+    const agentDbFollowups = dbFollowups.filter(f => 
+      f.sales_owner?.toLowerCase() === authenticatedAgent.toLowerCase() ||
+      f.lead_owner?.toLowerCase() === authenticatedAgent.toLowerCase()
+    );
+    
+    // Combine and deduplicate
+    const allFollowups = [...agentDbFollowups, ...leadsFollowups];
+    const uniqueFollowups = Array.from(
+      new Map(allFollowups.map(f => [f.lead_id + f.follow_up_date, f])).values()
+    );
 
     res.json({
       success: true,
-      data: filtered,
-      count: filtered.length
+      data: uniqueFollowups,
+      count: uniqueFollowups.length
     });
   } catch (error) {
     next(error);
@@ -254,22 +266,35 @@ router.get('/followups/today', async (req, res, next) => {
 /**
  * GET /api/leads/followups/overdue
  * Get overdue follow-ups
+ * PROTECTED: Only returns authenticated agent's followups
  */
 router.get('/followups/overdue', async (req, res, next) => {
   try {
-    const { owner } = req.query;
+    const authenticatedAgent = req.user.agentName;
     const service = getEnhancedSheetsService();
-    const followups = await service.getOverdueFollowUps();
-
-    // Filter by owner if specified
-    const filtered = owner && owner !== 'all'
-      ? followups.filter(f => f.sales_owner === owner)
-      : followups;
+    
+    // Get overdue from both sources
+    const [dbOverdue, leadsOverdue] = await Promise.all([
+      service.getOverdueFollowUps(),
+      service.getLeadsWithOverdueFollowUp(authenticatedAgent)
+    ]);
+    
+    // Filter by authenticated agent
+    const agentDbOverdue = dbOverdue.filter(f => 
+      f.sales_owner?.toLowerCase() === authenticatedAgent.toLowerCase() ||
+      f.lead_owner?.toLowerCase() === authenticatedAgent.toLowerCase()
+    );
+    
+    // Combine and deduplicate
+    const allOverdue = [...agentDbOverdue, ...leadsOverdue];
+    const uniqueOverdue = Array.from(
+      new Map(allOverdue.map(f => [f.lead_id + f.follow_up_date, f])).values()
+    );
 
     res.json({
       success: true,
-      data: filtered,
-      count: filtered.length
+      data: uniqueOverdue,
+      count: uniqueOverdue.length
     });
   } catch (error) {
     next(error);
@@ -279,15 +304,17 @@ router.get('/followups/overdue', async (req, res, next) => {
 /**
  * GET /api/leads/followups/active
  * Get all active follow-ups with enriched lead data
+ * PROTECTED: Returns authenticated agent's follow-ups only
  */
 router.get('/followups/active', async (req, res, next) => {
   try {
-    const { owner } = req.query;
+    const authenticatedAgent = req.user.agentName;
     const service = getEnhancedSheetsService();
-    const followups = await service.getAllActiveFollowUps(owner);
+    
+    // Get all active follow-ups for this agent from both sources
+    const followups = await service.getAllActiveFollowUpsForAgent(authenticatedAgent);
 
     // Categorize for dashboard
-    const today = new Date().toISOString().split('T')[0];
     const categorized = {
       overdue: followups.filter(f => f.is_overdue),
       today: followups.filter(f => f.is_today),
