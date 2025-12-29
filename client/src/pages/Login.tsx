@@ -93,35 +93,11 @@ const Login = () => {
           </form>
 
           <div className="mt-8 p-4 bg-primary/5 rounded-2xl border border-primary/10">
-            <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">Demo Credentials</h3>
-            <div className="space-y-2">
-              <div
-                className="flex items-center justify-between text-sm cursor-pointer hover:bg-primary/5 p-2 rounded-lg transition-colors group"
-                onClick={() => {
-                  setUsername('admin')
-                  setPassword('password123')
-                }}
-              >
-                <div>
-                  <span className="text-muted-foreground">User:</span>
-                  <span className="ml-2 font-mono text-foreground">admin</span>
-                </div>
-                <div className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                  Click to fill
-                </div>
-              </div>
-              <div
-                className="flex items-center justify-between text-sm cursor-pointer hover:bg-primary/5 p-2 rounded-lg transition-colors group"
-                onClick={() => {
-                  setUsername('admin')
-                  setPassword('password123')
-                }}
-              >
-                <div>
-                  <span className="text-muted-foreground">Pass:</span>
-                  <span className="ml-2 font-mono text-foreground">password123</span>
-                </div>
-              </div>
+            <h3 className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">Login Information</h3>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p>• Username: Your name from Lead Owner column (lowercase)</p>
+              <p>• Password: <span className="font-mono font-bold text-foreground">123</span></p>
+              <p className="text-xs mt-3">Example: If your name is "Amisha", use username <span className="font-mono text-foreground">amisha</span></p>
             </div>
           </div>
 

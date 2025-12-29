@@ -1,0 +1,87 @@
+[
+  {
+    "username": "amisha",
+    "agentName": "Amisha",
+    "role": "agent"
+  },
+  {
+    "username": "anil",
+    "agentName": "Anil",
+    "role": "agent"
+  },
+  {
+    "username": "anjali",
+    "agentName": "Anjali",
+    "role": "agent"
+  },
+  {
+    "username": "gauri",
+    "agentName": "Gauri",
+    "role": "agent"
+  },
+  {
+    "username": "jyotsna",
+    "agentName": "Jyotsna",
+    "role": "agent"
+  },
+  {
+    "username": "manideep",
+    "agentName": "Manideep",
+    "role": "agent"
+  },
+  {
+    "username": "megha",
+    "agentName": "Megha",
+    "role": "agent"
+  },
+  {
+    "username": "milan",
+    "agentName": "Milan",
+    "role": "agent"
+  },
+  {
+    "username": "miloni",
+    "agentName": "Miloni",
+    "role": "agent"
+  },
+  {
+    "username": "nikita",
+    "agentName": "Nikita",
+    "role": "agent"
+  },
+  {
+    "username": "prachi",
+    "agentName": "Prachi",
+    "role": "agent"
+  },
+  {
+    "username": "pushpalata",
+    "agentName": "Pushpalata",
+    "role": "agent"
+  },
+  {
+    "username": "rachana",
+    "agentName": "Rachana",
+    "role": "agent"
+  },
+  {
+    "username": "radheyshyam",
+    "agentName": "Radheyshyam",
+    "role": "agent"
+  },
+  {
+    "username": "sahil",
+    "agentName": "Sahil",
+    "role": "agent"
+  },
+  {
+    "username": "sanaya",
+    "agentName": "Sanaya",
+    "role": "agent"
+  },
+  {
+    "username": "vipul",
+    "agentName": "Vipul",
+    "role": "agent"
+  }
+]

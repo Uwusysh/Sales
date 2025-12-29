@@ -1,6 +1,9 @@
 const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
 
+// Test users that should be removed
+const TEST_USERNAMES = ['agent.smith', 'agent.jones', 'admin', 'test', 'demo'];
+
 export interface User {
   username: string
   agentName: string
@@ -20,6 +23,11 @@ const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5000/api';
 
 export const authService = {
   async login(username: string, password: string): Promise<User> {
+    // 🚫 Prevent test users from logging in
+    if (TEST_USERNAMES.includes(username.toLowerCase())) {
+      throw new Error('Test accounts are no longer available. Please use your Lead_Owner credentials.');
+    }
+
     const response = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: {
@@ -57,8 +65,7 @@ export const authService = {
       }
     }
 
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    this.clearStorage();
   },
 
   getToken(): string | null {
@@ -70,10 +77,24 @@ export const authService = {
     if (!userStr) return null;
     
     try {
-      return JSON.parse(userStr);
+      const user = JSON.parse(userStr);
+      
+      // 🚫 Auto-logout test users
+      if (TEST_USERNAMES.includes(user.username.toLowerCase())) {
+        console.warn('⚠️ Test user detected in storage. Forcing logout...');
+        this.clearStorage();
+        return null;
+      }
+      
+      return user;
     } catch {
       return null;
     }
+  },
+
+  clearStorage(): void {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
   },
 
   isAuthenticated(): boolean {

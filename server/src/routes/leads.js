@@ -14,6 +14,7 @@ let leadsCache = {
 /**
  * GET /api/leads
  * Fetch all leads with filters, search, sorting, and pagination
+ * PROTECTED: Only returns leads for the authenticated agent
  */
 router.get('/', async (req, res, next) => {
   try {
@@ -33,6 +34,10 @@ router.get('/', async (req, res, next) => {
     const service = getEnhancedSheetsService();
     const now = Date.now();
 
+    // Get authenticated user from JWT token
+    const authenticatedAgent = req.user.agentName;
+    console.log(`🔒 User "${authenticatedAgent}" accessing their leads`);
+
     // Get leads with caching
     const isStale = !leadsCache.data || (now - leadsCache.lastFetch) > leadsCache.ttl;
 
@@ -45,7 +50,17 @@ router.get('/', async (req, res, next) => {
 
     let filteredLeads = [...leadsCache.data];
 
-    // Apply filters
+    // 🔒 SECURITY: Always filter by authenticated user's agent name
+    // This ensures users can ONLY see their own leads
+    filteredLeads = filteredLeads.filter(l => {
+      const leadOwner = String(l.lead_owner || '').trim();
+      // Match the exact agent name (case-insensitive)
+      return leadOwner.toLowerCase() === authenticatedAgent.toLowerCase();
+    });
+
+    console.log(`🔒 Filtered to ${filteredLeads.length} leads for agent "${authenticatedAgent}"`);
+
+    // Apply additional filters
     if (status && status !== 'all' && status !== '') {
       const statusLower = status.toLowerCase();
       filteredLeads = filteredLeads.filter(l =>
@@ -53,6 +68,7 @@ router.get('/', async (req, res, next) => {
       );
     }
 
+    // Owner filter is now informational only (already filtered by auth)
     if (owner && owner !== 'all' && owner !== '') {
       const ownerLower = owner.toLowerCase();
       filteredLeads = filteredLeads.filter(l =>
@@ -177,11 +193,28 @@ router.get('/', async (req, res, next) => {
 /**
  * GET /api/leads/stats
  * Get dashboard statistics
+ * PROTECTED: Only returns stats for authenticated agent's leads
  */
 router.get('/stats', async (req, res, next) => {
   try {
+    const authenticatedAgent = req.user.agentName;
     const service = getEnhancedSheetsService();
-    const stats = await service.getStats();
+    
+    // Get all leads and filter by agent
+    const allLeads = await service.getLeads();
+    const agentLeads = allLeads.filter(l => 
+      String(l.lead_owner || '').trim().toLowerCase() === authenticatedAgent.toLowerCase()
+    );
+
+    // Calculate stats from filtered leads
+    const stats = {
+      totalLeads: agentLeads.length,
+      newLeads: agentLeads.filter(l => l.status === 'New').length,
+      working: agentLeads.filter(l => l.status === 'Working').length,
+      sql: agentLeads.filter(l => l.status === 'SQL').length,
+      won: agentLeads.filter(l => l.status === 'PO RCVD').length,
+      lost: agentLeads.filter(l => l.status === 'Lost').length,
+    };
 
     res.json({
       success: true,
@@ -195,16 +228,23 @@ router.get('/stats', async (req, res, next) => {
 /**
  * GET /api/leads/followups/today
  * Get today's follow-up tasks
+ * PROTECTED: Only returns authenticated agent's followups
  */
 router.get('/followups/today', async (req, res, next) => {
   try {
+    const authenticatedAgent = req.user.agentName;
     const service = getEnhancedSheetsService();
-    const followups = await service.getTodayFollowUps();
+    const allFollowups = await service.getTodayFollowUps();
+    
+    // 🔒 SECURITY: Filter followups by authenticated agent
+    const agentFollowups = allFollowups.filter(f => 
+      String(f.lead_owner || '').trim().toLowerCase() === authenticatedAgent.toLowerCase()
+    );
 
     res.json({
       success: true,
-      data: followups,
-      count: followups.length
+      data: agentFollowups,
+      count: agentFollowups.length
     });
   } catch (error) {
     next(error);
@@ -246,15 +286,27 @@ router.get('/check-duplicate', async (req, res, next) => {
 /**
  * GET /api/leads/:id
  * Get single lead details
+ * PROTECTED: Only returns if lead belongs to authenticated agent
  */
 router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
+    const authenticatedAgent = req.user.agentName;
     const service = getEnhancedSheetsService();
     const lead = await service.getLeadById(id);
 
     if (!lead) {
       return res.status(404).json({ success: false, error: 'Lead not found' });
+    }
+
+    // 🔒 SECURITY: Verify lead belongs to authenticated agent
+    const leadOwner = String(lead.lead_owner || '').trim();
+    if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
+      console.warn(`🚫 Unauthorized access attempt: ${authenticatedAgent} tried to access ${leadOwner}'s lead ${id}`);
+      return res.status(403).json({ 
+        success: false, 
+        error: 'Forbidden: You can only access your own leads' 
+      });
     }
 
     // Get related data (SRF, Quotations)
@@ -374,13 +426,31 @@ router.post('/force-create', async (req, res, next) => {
 /**
  * PATCH /api/leads/:id
  * Update lead fields
+ * PROTECTED: Can only update own leads
  */
 router.patch('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const updates = req.body;
+    const authenticatedAgent = req.user.agentName;
 
     const service = getEnhancedSheetsService();
+    
+    // 🔒 SECURITY: Verify ownership before update
+    const lead = await service.getLeadById(id);
+    if (!lead) {
+      return res.status(404).json({ success: false, error: 'Lead not found' });
+    }
+
+    const leadOwner = String(lead.lead_owner || '').trim();
+    if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
+      console.warn(`🚫 Unauthorized update attempt: ${authenticatedAgent} tried to update ${leadOwner}'s lead ${id}`);
+      return res.status(403).json({ 
+        success: false, 
+        error: 'Forbidden: You can only update your own leads' 
+      });
+    }
+
     const result = await service.updateLead(id, updates);
 
     if (!result.success) {
@@ -399,17 +469,35 @@ router.patch('/:id', async (req, res, next) => {
 /**
  * PATCH /api/leads/:id/status
  * Quick status update
+ * PROTECTED: Can only update own leads
  */
 router.patch('/:id/status', async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status, remarks } = req.body;
+    const authenticatedAgent = req.user.agentName;
 
     if (!status) {
       return res.status(400).json({ success: false, error: 'Status is required' });
     }
 
     const service = getEnhancedSheetsService();
+    
+    // 🔒 SECURITY: Verify ownership before update
+    const lead = await service.getLeadById(id);
+    if (!lead) {
+      return res.status(404).json({ success: false, error: 'Lead not found' });
+    }
+
+    const leadOwner = String(lead.lead_owner || '').trim();
+    if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
+      console.warn(`🚫 Unauthorized status update: ${authenticatedAgent} tried to update ${leadOwner}'s lead ${id}`);
+      return res.status(403).json({ 
+        success: false, 
+        error: 'Forbidden: You can only update your own leads' 
+      });
+    }
+
     const updates = { Status: status };
 
     // Add date stamps based on status
@@ -434,17 +522,29 @@ router.patch('/:id/status', async (req, res, next) => {
 /**
  * POST /api/leads/:id/followup
  * Schedule a follow-up for a lead
+ * PROTECTED: Can only schedule followup for own leads
  */
 router.post('/:id/followup', async (req, res, next) => {
   try {
     const { id } = req.params;
     const followUpData = req.body;
+    const authenticatedAgent = req.user.agentName;
 
     const service = getEnhancedSheetsService();
     const lead = await service.getLeadById(id);
 
     if (!lead) {
       return res.status(404).json({ success: false, error: 'Lead not found' });
+    }
+
+    // 🔒 SECURITY: Verify ownership before creating followup
+    const leadOwner = String(lead.lead_owner || '').trim();
+    if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
+      console.warn(`🚫 Unauthorized followup creation: ${authenticatedAgent} tried to create followup for ${leadOwner}'s lead ${id}`);
+      return res.status(403).json({ 
+        success: false, 
+        error: 'Forbidden: You can only manage followups for your own leads' 
+      });
     }
 
     // Create follow-up entry

@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "start": "node dist/server.js",
     "build": "node build.js",
-    "db:setup": "node src/scripts/setupSheets.js"
+    "db:setup": "node src/scripts/setupSheets.js",
+    "generate-users": "node src/scripts/generateUsersFromExcel.js"
   },
   "keywords": [],
   "author": "",
