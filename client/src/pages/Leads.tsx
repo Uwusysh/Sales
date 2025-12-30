@@ -8,7 +8,7 @@ import {
     Package, Edit2, FileText, ExternalLink, TrendingUp
 } from 'lucide-react';
 import {
-    fetchLeads, fetchLeadStats, refreshLeadsCache, updateLeadStatus,
+    fetchLeads, fetchLeadStats, refreshLeadsCache,
     Lead, FetchLeadsOptions, formatValue, getRelativeTime,
     fetchLeadById, scheduleFollowUp
 } from '../lib/api';
@@ -228,15 +228,6 @@ export default function LeadsPage() {
     const handleRefresh = async () => {
         await refreshLeadsCache();
         loadLeads();
-    };
-
-    const handleQuickStatusChange = async (leadId: string, newStatus: string) => {
-        try {
-            await updateLeadStatus(leadId, newStatus);
-            loadLeads();
-        } catch (err) {
-            console.error('Status update failed:', err);
-        }
     };
 
     const getStatusStyle = (status: string) => {
@@ -723,14 +714,14 @@ export default function LeadsPage() {
                 }}
             />
 
-            {/* Lead Detail Slide-over Panel */}
+            {/* Lead Detail Modal Panel */}
             {selectedLead && (
-                <div className="fixed inset-0 z-50 flex justify-end">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                     <div
                         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
                         onClick={() => setSelectedLead(null)}
                     />
-                    <div className="relative w-full max-w-lg bg-card shadow-2xl h-full overflow-y-auto animate-in slide-in-from-right duration-300">
+                    <div className="relative w-full max-w-3xl bg-card shadow-2xl rounded-2xl max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-300">
                         {/* Panel Header */}
                         <div className="sticky top-0 bg-card/95 backdrop-blur border-b border-border p-4 flex items-start justify-between z-10">
                             <div className="flex-1 min-w-0">
@@ -739,6 +730,9 @@ export default function LeadsPage() {
                                 </h2>
                                 <p className="text-sm text-muted-foreground font-mono flex items-center gap-2">
                                     {selectedLead.lead_id || selectedLead.enquiry_code}
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${getStatusStyle(selectedLead.status)}`}>
+                                        {selectedLead.status}
+                                    </span>
                                     {selectedLead.is_returning_customer === 'Yes' && (
                                         <span className="px-1.5 py-0.5 text-[10px] bg-purple-100 text-purple-700 rounded">
                                             Returning
@@ -760,25 +754,6 @@ export default function LeadsPage() {
                         </div>
 
                         <div className="p-4 space-y-4">
-                            {/* Quick Status Change */}
-                            <div className="flex flex-wrap gap-2">
-                                {STATUS_BUCKETS.filter(s => s !== 'all').map(status => (
-                                    <button
-                                        key={status}
-                                        onClick={() => handleQuickStatusChange(selectedLead.id, status)}
-                                        className={`
-                                            px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
-                                            ${selectedLead.status === status
-                                                ? getStatusStyle(status) + ' ring-2 ring-offset-2 ring-primary/20'
-                                                : 'bg-secondary/30 border-border text-muted-foreground hover:bg-secondary'
-                                            }
-                                        `}
-                                    >
-                                        {status}
-                                    </button>
-                                ))}
-                            </div>
-
                             {/* Contact Info Card */}
                             <div className="bg-gradient-to-br from-secondary/50 to-secondary/30 rounded-xl p-4 space-y-3">
                                 <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
