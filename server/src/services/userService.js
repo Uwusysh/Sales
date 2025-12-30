@@ -79,7 +79,7 @@ const defaultUsers = [
     "username": "pushpalata",
     "password": "$2a$10$e/EEy572aOvkpTK.yuhII.t8c7.VAkZs6kcd0avTek2d9AUi0NFfW",
     "agentName": "Pushpalata",
-    "role": "agent"
+    "role": "admin"
   },
   {
     "username": "rachana",

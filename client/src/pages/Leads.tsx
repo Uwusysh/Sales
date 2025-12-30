@@ -123,11 +123,13 @@ export default function LeadsPage() {
     const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
     const [stats, setStats] = useState<{
         totalLeads: number;
+        myLeads: number;
         totalPOValue: number;
         todayLeads: number;
         statusCounts: Record<string, number>;
         ownerCounts: Record<string, number>;
         locationCounts: Record<string, number>;
+        isAdmin: boolean;
     } | null>(null);
     const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
     const [showFilters, setShowFilters] = useState(false);
@@ -166,30 +168,35 @@ export default function LeadsPage() {
             setLoading(true);
             setError(null);
 
+            // First fetch stats to know if user is admin
+            const statsRes = await fetchLeadStats();
+            const isAdmin = statsRes.data.isAdmin;
+            setStats(statsRes.data);
+
             // If viewMode is 'my', force owner filter to current user's agent code/name
-            // Assuming user.agentName correlates with lead_owner or sales_owner
+            // Admin can view all leads when viewMode is 'all'
             const effectiveOwnerFilter = viewMode === 'my' && user?.agentName
                 ? user.agentName
                 : (ownerFilter !== 'all' ? ownerFilter : undefined);
 
-            const [leadsRes, statsRes] = await Promise.all([
-                fetchLeads({
-                    status: statusFilter !== 'all' ? statusFilter : undefined,
-                    owner: effectiveOwnerFilter,
-                    location: locationFilter !== 'all' ? locationFilter : undefined,
-                    search: debouncedSearch || undefined,
-                    sortBy,
-                    sortOrder,
-                    offset: 0,
-                    limit: 100 * page
-                }),
-                fetchLeadStats()
-            ]);
+            // Only admin can use viewAll parameter
+            const shouldViewAll = isAdmin && viewMode === 'all';
+
+            const leadsRes = await fetchLeads({
+                status: statusFilter !== 'all' ? statusFilter : undefined,
+                owner: effectiveOwnerFilter,
+                location: locationFilter !== 'all' ? locationFilter : undefined,
+                search: debouncedSearch || undefined,
+                sortBy,
+                sortOrder,
+                offset: 0,
+                limit: 100 * page,
+                viewAll: shouldViewAll
+            });
 
             setLeads(leadsRes.data);
             setHasMore(leadsRes.meta.hasMore);
             setStatusCounts(leadsRes.meta.statusCounts);
-            setStats(statsRes.data);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load leads');
         } finally {
@@ -291,21 +298,31 @@ export default function LeadsPage() {
         }
     };
 
+    // Check if user is admin (Pushpalata)
+    const isAdmin = stats?.isAdmin || false;
+
     return (
         <AppLayout>
             {/* Header Stats - Personalized + Actionable */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                <div
-                    onClick={() => { setViewMode('all'); setStatusFilter('all'); }}
-                    className={`glass-card p-4 rounded-xl cursor-pointer hover:shadow-md transition-all ${viewMode === 'all' && statusFilter === 'all' ? 'ring-2 ring-primary/20 bg-primary/5' : ''}`}
-                >
-                    <div className="flex items-center justify-between">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Leads</p>
-                        <Building2 className="w-4 h-4 text-muted-foreground" />
+            <div className={`grid ${isAdmin ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-1 md:grid-cols-3'} gap-3 mb-6`}>
+                {/* Total Leads Card - ONLY visible to Admin (Pushpalata) */}
+                {isAdmin && (
+                    <div
+                        onClick={() => { setViewMode('all'); setStatusFilter('all'); }}
+                        className={`glass-card p-4 rounded-xl cursor-pointer hover:shadow-md transition-all border-l-4 border-l-purple-500 ${viewMode === 'all' && statusFilter === 'all' ? 'ring-2 ring-purple-500/30 bg-purple-50' : ''}`}
+                    >
+                        <div className="flex items-center justify-between">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Leads</p>
+                            <Building2 className="w-4 h-4 text-purple-500" />
+                        </div>
+                        <p className="text-2xl font-bold text-purple-600 mt-1">{stats?.totalLeads || '-'}</p>
+                        <p className="text-xs text-muted-foreground mt-1">All database records</p>
+                        <span className="inline-flex items-center gap-1 mt-2 text-[10px] px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full">
+                            <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                            Admin View
+                        </span>
                     </div>
-                    <p className="text-2xl font-bold text-foreground mt-1">{stats?.totalLeads || '-'}</p>
-                    <p className="text-xs text-muted-foreground mt-1">All database records</p>
-                </div>
+                )}
 
                 <div
                     onClick={() => { setViewMode('my'); setStatusFilter('all'); }}
@@ -315,17 +332,16 @@ export default function LeadsPage() {
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">My Leads</p>
                         <User className="w-4 h-4 text-primary" />
                     </div>
-                    {/* Note: This count is rough until backend supports explicit 'my count', usually handled by owner filter */}
                     <p className="text-2xl font-bold text-primary mt-1">
-                        {stats?.ownerCounts?.[user?.agentName || ''] || 0}
+                        {stats?.myLeads || 0}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">Assigned to you</p>
                 </div>
 
                 <div
                     onClick={() => {
-                        setStatusFilter('New'); // Assuming 'New' means pending call
-                        setViewMode('all'); // Or 'my' depending on preference, sticking to all for broader view
+                        setStatusFilter('New');
+                        setViewMode('my');
                     }}
                     className="glass-card p-4 rounded-xl cursor-pointer hover:shadow-md transition-all border-l-4 border-l-blue-500"
                 >
@@ -339,10 +355,7 @@ export default function LeadsPage() {
 
                 <div
                     onClick={() => {
-                        // Since we don't have a direct 'today' filter on frontend state easily without modifying API significantly, 
-                        // we'll rely on the visual badge or existing followups/today endpoint.
-                        // Ideally, this should trigger a "Follow-ups" view.
-                        // For now, let's just show the count.
+                        // Navigate to follow-ups page would be ideal
                     }}
                     className="glass-card p-4 rounded-xl cursor-pointer hover:shadow-md transition-all border-l-4 border-l-amber-500"
                 >
@@ -350,7 +363,6 @@ export default function LeadsPage() {
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Follow-ups Due</p>
                         <Clock className="w-4 h-4 text-amber-500" />
                     </div>
-                    {/* This would ideally come from a specific stat */}
                     <p className="text-2xl font-bold text-amber-600 mt-1">{stats?.todayLeads || 0}</p>
                     <p className="text-xs text-muted-foreground mt-1">Tasked for Today</p>
                 </div>
@@ -371,18 +383,21 @@ export default function LeadsPage() {
                     >
                         My View
                     </button>
-                    <button
-                        onClick={() => setViewMode('all')}
-                        className={`
-                            flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-medium transition-all
-                            ${viewMode === 'all'
-                                ? 'bg-background text-foreground shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground'
-                            }
-                        `}
-                    >
-                        All Leads
-                    </button>
+                    {/* All Leads button - Only visible to Admin */}
+                    {isAdmin && (
+                        <button
+                            onClick={() => setViewMode('all')}
+                            className={`
+                                flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-medium transition-all
+                                ${viewMode === 'all'
+                                    ? 'bg-purple-100 text-purple-700 shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground'
+                                }
+                            `}
+                        >
+                            All Leads
+                        </button>
+                    )}
                 </div>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -400,7 +415,10 @@ export default function LeadsPage() {
             <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
                 {STATUS_BUCKETS.map(status => {
                     const isActive = statusFilter === status;
-                    const count = status === 'all' ? stats?.totalLeads : statusCounts[status];
+                    // For 'all' bucket: admins see total, agents see their own count (myLeads)
+                    const count = status === 'all' 
+                        ? (isAdmin && viewMode === 'all' ? stats?.totalLeads : stats?.myLeads)
+                        : statusCounts[status];
                     return (
                         <button
                             key={status}

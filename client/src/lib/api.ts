@@ -110,11 +110,13 @@ export interface StatsResponse {
   success: boolean;
   data: {
     totalLeads: number;
+    myLeads: number;
     statusCounts: Record<string, number>;
     ownerCounts: Record<string, number>;
     locationCounts: Record<string, number>;
     totalPOValue: number;
     todayLeads: number;
+    isAdmin: boolean;
   };
 }
 
@@ -138,6 +140,7 @@ export interface FetchLeadsOptions {
   offset?: number;
   followUpToday?: boolean;
   srfIncomplete?: boolean;
+  viewAll?: boolean;
 }
 
 // ============ API FUNCTIONS ============
@@ -157,6 +160,7 @@ export async function fetchLeads(params?: FetchLeadsOptions): Promise<LeadsRespo
   if (params?.offset) query.set('offset', String(params.offset));
   if (params?.followUpToday) query.set('followUpToday', 'true');
   if (params?.srfIncomplete) query.set('srfIncomplete', 'true');
+  if (params?.viewAll) query.set('viewAll', 'true');
 
   const response = await fetch(`${API_BASE}/leads?${query.toString()}`, {
     headers: getAuthHeaders()
