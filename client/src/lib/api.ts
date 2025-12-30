@@ -116,6 +116,7 @@ export interface StatsResponse {
     locationCounts: Record<string, number>;
     totalPOValue: number;
     todayLeads: number;
+    followUpDue: number;
     isAdmin: boolean;
   };
 }
