@@ -223,6 +223,7 @@ router.get('/stats', async (req, res, next) => {
     );
 
     // Calculate stats from agent's leads
+    const today = new Date().toISOString().split('T')[0];
     const stats = {
       // For admin: show total database count, for agent: show their own count
       totalLeads: isAdmin ? allLeads.length : agentLeads.length,
@@ -232,6 +233,13 @@ router.get('/stats', async (req, res, next) => {
       sql: agentLeads.filter(l => l.status === 'SQL').length,
       won: agentLeads.filter(l => l.status === 'PO RCVD').length,
       lost: agentLeads.filter(l => l.status === 'Lost').length,
+      followUpDue: agentLeads.filter(l => 
+        l.follow_up_date && 
+        l.follow_up_date <= today && 
+        l.status !== 'PO RCVD' && 
+        l.status !== 'Lost' &&
+        l.status !== 'Closed'
+      ).length,
       isAdmin: isAdmin
     };
 

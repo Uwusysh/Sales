@@ -12,6 +12,7 @@ import {
     Lead, FetchLeadsOptions, formatValue, getRelativeTime,
     fetchLeadById, scheduleFollowUp
 } from '../lib/api';
+import { useNavigate } from '../hooks/useNavigate';
 import { AddLeadModal } from '../components/leads/AddLeadModal';
 import { VoiceInput } from '../components/ui/VoiceInput';
 
@@ -126,6 +127,7 @@ export default function LeadsPage() {
         myLeads: number;
         totalPOValue: number;
         todayLeads: number;
+        followUpDue: number;
         statusCounts: Record<string, number>;
         ownerCounts: Record<string, number>;
         locationCounts: Record<string, number>;
@@ -150,6 +152,7 @@ export default function LeadsPage() {
     });
 
     const { user } = useAuth();
+    const navigate = useNavigate();
     const [viewMode, setViewMode] = useState<'all' | 'my'>('my');
 
     // Debounce search
@@ -170,7 +173,7 @@ export default function LeadsPage() {
 
             // First fetch stats to know if user is admin
             const statsRes = await fetchLeadStats();
-            const isAdmin = statsRes.data.isAdmin;
+            const isAdminUser = statsRes.data.isAdmin;
             setStats(statsRes.data);
 
             // If viewMode is 'my', force owner filter to current user's agent code/name
@@ -180,7 +183,7 @@ export default function LeadsPage() {
                 : (ownerFilter !== 'all' ? ownerFilter : undefined);
 
             // Only admin can use viewAll parameter
-            const shouldViewAll = isAdmin && viewMode === 'all';
+            const shouldViewAll = isAdminUser && viewMode === 'all';
 
             const leadsRes = await fetchLeads({
                 status: statusFilter !== 'all' ? statusFilter : undefined,
@@ -354,17 +357,15 @@ export default function LeadsPage() {
                 </div>
 
                 <div
-                    onClick={() => {
-                        // Navigate to follow-ups page would be ideal
-                    }}
+                    onClick={() => navigate('/followups')}
                     className="glass-card p-4 rounded-xl cursor-pointer hover:shadow-md transition-all border-l-4 border-l-amber-500"
                 >
                     <div className="flex items-center justify-between">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Follow-ups Due</p>
                         <Clock className="w-4 h-4 text-amber-500" />
                     </div>
-                    <p className="text-2xl font-bold text-amber-600 mt-1">{stats?.todayLeads || 0}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Tasked for Today</p>
+                    <p className="text-2xl font-bold text-amber-600 mt-1">{stats?.followUpDue || 0}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Tasked for Today & Overdue</p>
                 </div>
             </div>
 
