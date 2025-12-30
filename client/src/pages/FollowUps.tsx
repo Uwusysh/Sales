@@ -18,14 +18,23 @@ const priorityColors: Record<string, { bg: string; text: string; border: string 
 };
 
 // Follow-up type icons
-const getFollowUpIcon = (type: string) => {
-    switch (type?.toLowerCase()) {
-        case 'call': return <Phone className="w-4 h-4" />;
-        case 'whatsapp': return <MessageSquare className="w-4 h-4" />;
-        case 'email': return <Mail className="w-4 h-4" />;
-        case 'meeting': return <Video className="w-4 h-4" />;
-        default: return <Phone className="w-4 h-4" />;
-    }
+const getFollowUpIcons = (type: string) => {
+    const normalizedType = type?.toLowerCase() || '';
+    const icons: React.ReactNode[] = [];
+    
+    if (normalizedType.includes('call')) icons.push(<Phone key="call" className="w-4 h-4" />);
+    if (normalizedType.includes('whatsapp')) icons.push(<MessageSquare key="whatsapp" className="w-4 h-4" />);
+    if (normalizedType.includes('email')) icons.push(<Mail key="email" className="w-4 h-4" />);
+    if (normalizedType.includes('meeting')) icons.push(<Video key="meeting" className="w-4 h-4" />);
+    if (normalizedType.includes('site visit')) icons.push(<MapPin key="site" className="w-4 h-4" />);
+    
+    if (icons.length === 0) icons.push(<Phone key="default" className="w-4 h-4" />);
+    
+    return (
+        <div className="flex items-center gap-1.5">
+            {icons}
+        </div>
+    );
 };
 
 export default function FollowUpsPage() {
@@ -329,8 +338,8 @@ export default function FollowUpsPage() {
                             {/* Type */}
                             <div className="col-span-1">
                                 <div className="flex items-center gap-2">
-                                    {getFollowUpIcon(followUp.follow_up_type)}
-                                    <span className="text-sm text-muted-foreground hidden lg:inline">
+                                    {getFollowUpIcons(followUp.follow_up_type)}
+                                    <span className="text-[10px] text-muted-foreground hidden lg:inline truncate max-w-[60px]">
                                         {followUp.follow_up_type}
                                     </span>
                                 </div>
@@ -451,7 +460,10 @@ export default function FollowUpsPage() {
                                 </div>
                                 <div className="flex items-center justify-between text-sm">
                                     <span className="text-muted-foreground">Type:</span>
-                                    <span className="font-medium">{selectedFollowUp.follow_up_type}</span>
+                                    <div className="flex items-center gap-2 font-medium">
+                                        {getFollowUpIcons(selectedFollowUp.follow_up_type)}
+                                        <span>{selectedFollowUp.follow_up_type}</span>
+                                    </div>
                                 </div>
                                 {selectedFollowUp.notes && (
                                     <div className="pt-2 border-t border-border">

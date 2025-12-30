@@ -143,7 +143,7 @@ export default function LeadsPage() {
         date: '',
         time: '',
         notes: '',
-        type: 'Call'
+        types: ['Call'] as string[]
     });
 
     const { user } = useAuth();
@@ -270,7 +270,7 @@ export default function LeadsPage() {
     }, [selectedLead?.id]);
 
     const handleScheduleFollowUp = async () => {
-        if (!selectedLead || !followUpForm.date) return;
+        if (!selectedLead || !followUpForm.date || followUpForm.types.length === 0) return;
 
         try {
             setIsDetailLoading(true);
@@ -278,7 +278,7 @@ export default function LeadsPage() {
                 follow_up_date: followUpForm.date,
                 follow_up_time: followUpForm.time,
                 notes: followUpForm.notes,
-                follow_up_type: followUpForm.type,
+                follow_up_type: followUpForm.types.join(', '),
                 sales_owner: user?.agentName || selectedLead.lead_owner
             });
 
@@ -288,7 +288,7 @@ export default function LeadsPage() {
 
             // Reset form
             setShowFollowUpForm(false);
-            setFollowUpForm({ date: '', time: '', notes: '', type: 'Call' });
+            setFollowUpForm({ date: '', time: '', notes: '', types: ['Call'] });
 
             // Refresh list in background
             loadLeads();
@@ -938,18 +938,45 @@ export default function LeadsPage() {
                                                 </div>
                                             </div>
                                             <div>
-                                                <label className="text-[10px] text-muted-foreground uppercase font-semibold mb-1 block">Type</label>
-                                                <select
-                                                    value={followUpForm.type}
-                                                    onChange={e => setFollowUpForm({ ...followUpForm, type: e.target.value })}
-                                                    className="w-full text-sm p-2 rounded border border-border"
-                                                >
-                                                    <option value="Call">Call</option>
-                                                    <option value="WhatsApp">WhatsApp</option>
-                                                    <option value="Email">Email</option>
-                                                    <option value="Meeting">Meeting</option>
-                                                    <option value="Site Visit">Site Visit</option>
-                                                </select>
+                                                <label className="text-[10px] text-muted-foreground uppercase font-semibold mb-2 block">Types (Select multiple)</label>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {[
+                                                        { id: 'Call', label: '📞 Call' },
+                                                        { id: 'WhatsApp', label: '💬 WhatsApp' },
+                                                        { id: 'Email', label: '📧 Email' },
+                                                        { id: 'Meeting', label: '🤝 Meeting' },
+                                                        { id: 'Site Visit', label: '🏗️ Site Visit' }
+                                                    ].map(type => {
+                                                        const isSelected = followUpForm.types.includes(type.id);
+                                                        return (
+                                                            <button
+                                                                key={type.id}
+                                                                onClick={() => {
+                                                                    if (isSelected) {
+                                                                        setFollowUpForm({
+                                                                            ...followUpForm,
+                                                                            types: followUpForm.types.filter(t => t !== type.id)
+                                                                        });
+                                                                    } else {
+                                                                        setFollowUpForm({
+                                                                            ...followUpForm,
+                                                                            types: [...followUpForm.types, type.id]
+                                                                        });
+                                                                    }
+                                                                }}
+                                                                className={`
+                                                                    px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
+                                                                    ${isSelected
+                                                                        ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                                                                        : 'bg-background border-border text-muted-foreground hover:bg-secondary'
+                                                                    }
+                                                                `}
+                                                            >
+                                                                {type.label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
                                             <div>
                                                 <label className="text-[10px] text-muted-foreground uppercase font-semibold mb-1 block">Notes / Remarks</label>
