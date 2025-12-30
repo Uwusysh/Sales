@@ -159,7 +159,7 @@ const SHEET_CONFIG = {
     frozenCols: 2,
     frozenRows: 1,
     dropdowns: {
-      'Follow_Up_Type': ['Call', 'WhatsApp', 'Email', 'Meeting', 'Site Visit'],
+      'Follow_Up_Type': ['Call', 'WhatsApp', 'Email', 'Meeting', 'Site Visit', 'Follow-up'],
       'Priority': ['High', 'Medium', 'Low'],
       'Completed': ['Yes', 'No']
     }
@@ -995,7 +995,7 @@ export class EnhancedSheetsService {
    * Mark a follow-up as completed
    * Updates both Daily Follow-up DB and Leads Master
    */
-  async completeFollowUp(leadId, followUpDate, outcome = '', nextFollowUpDate = null) {
+  async completeFollowUp(leadId, followUpDate, outcome = '', nextFollowUpDate = null, nextFollowUpType = 'Call') {
     const completionTimestamp = new Date().toISOString();
     let dbEntryFound = false;
 
@@ -1042,7 +1042,24 @@ export class EnhancedSheetsService {
       // Update follow-up date (clear if no next date, or set new date)
       if (nextFollowUpDate) {
         leadRow.set('Follow_Up_Date', nextFollowUpDate);
-        leadRow.set('Follow_Up_Remarks', `Next: ${outcome || 'Follow-up scheduled'}`);
+        leadRow.set('Follow_Up_Remarks', `Next [${nextFollowUpType}]: ${outcome || 'Follow-up scheduled'}`);
+        
+        // Also create a NEW entry in Daily Follow-up DB for the future follow-up
+        try {
+          await this.createFollowUp({
+            lead_id: leadId,
+            follow_up_date: nextFollowUpDate,
+            follow_up_time: '',
+            sales_owner: leadRow.get('Lead_Owner') || leadRow.get('Sales_Owner') || 'Agent',
+            client_name: leadRow.get('Client_Person_Name') || leadRow.get('Client_Company_Name'),
+            client_number: leadRow.get('Client_Number'),
+            follow_up_type: nextFollowUpType,
+            priority: 'Medium',
+            notes: `Scheduled from previous completion: ${outcome}`
+          });
+        } catch (fuErr) {
+          console.error('Failed to create new follow-up entry:', fuErr.message);
+        }
       } else {
         // Clear the follow-up date since it's completed
         leadRow.set('Follow_Up_Date', '');
@@ -1069,7 +1086,7 @@ export class EnhancedSheetsService {
     // Log sync action
     await this.logSync('UPDATE', 'FollowUp', leadId, 
       { follow_up_date: followUpDate, completed: 'No' },
-      { completed: 'Yes', completion_timestamp: completionTimestamp, next_follow_up: nextFollowUpDate },
+      { completed: 'Yes', completion_timestamp: completionTimestamp, next_follow_up: nextFollowUpDate, next_type: nextFollowUpType },
       'Dashboard'
     );
 

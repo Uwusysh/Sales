@@ -343,7 +343,7 @@ router.get('/followups/active', async (req, res, next) => {
  */
 router.post('/followups/complete', async (req, res, next) => {
   try {
-    const { lead_id, follow_up_date, outcome, next_follow_up_date } = req.body;
+    const { lead_id, follow_up_date, outcome, next_follow_up_date, next_follow_up_type } = req.body;
 
     if (!lead_id || !follow_up_date) {
       return res.status(400).json({
@@ -357,7 +357,8 @@ router.post('/followups/complete', async (req, res, next) => {
       lead_id,
       follow_up_date,
       outcome,
-      next_follow_up_date
+      next_follow_up_date,
+      next_follow_up_type
     );
 
     if (!result.success) {

@@ -28,7 +28,6 @@ const getFollowUpIcons = (type: string) => {
     if (normalizedType.includes('email')) icons.push(<Mail key="email" className="w-4 h-4" />);
     if (normalizedType.includes('meeting')) icons.push(<Video key="meeting" className="w-4 h-4" />);
     if (normalizedType.includes('site visit')) icons.push(<MapPin key="site" className="w-4 h-4" />);
-    if (normalizedType.includes('follow')) icons.push(<RefreshCw key="follow" className="w-4 h-4" />);
     
     if (icons.length === 0) icons.push(<Phone key="default" className="w-4 h-4" />);
     
@@ -515,8 +514,7 @@ export default function FollowUpsPage() {
                                             { id: 'WhatsApp', label: '💬 WhatsApp' },
                                             { id: 'Email', label: '📧 Email' },
                                             { id: 'Meeting', label: '🤝 Meeting' },
-                                            { id: 'Site Visit', label: '🏗️ Site Visit' },
-                                            { id: 'Follow-up', label: '🔄 Follow-up' }
+                                            { id: 'Site Visit', label: '🏗️ Site Visit' }
                                         ].map(type => {
                                             const isSelected = completionForm.nextTypes.includes(type.id);
                                             return (

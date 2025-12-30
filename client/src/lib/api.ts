@@ -385,7 +385,8 @@ export async function completeFollowUp(
   leadId: string,
   followUpDate: string,
   outcome?: string,
-  nextFollowUpDate?: string
+  nextFollowUpDate?: string,
+  nextFollowUpType?: string
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   const response = await fetch(`${API_BASE}/leads/followups/complete`, {
     method: 'POST',
@@ -394,7 +395,8 @@ export async function completeFollowUp(
       lead_id: leadId,
       follow_up_date: followUpDate,
       outcome,
-      next_follow_up_date: nextFollowUpDate
+      next_follow_up_date: nextFollowUpDate,
+      next_follow_up_type: nextFollowUpType
     })
   });
 
