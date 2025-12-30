@@ -921,7 +921,8 @@ export default function LeadsPage() {
                                                         { id: 'WhatsApp', label: '💬 WhatsApp' },
                                                         { id: 'Email', label: '📧 Email' },
                                                         { id: 'Meeting', label: '🤝 Meeting' },
-                                                        { id: 'Site Visit', label: '🏗️ Site Visit' }
+                                                        { id: 'Site Visit', label: '🏗️ Site Visit' },
+                                                        { id: 'Follow-up', label: '🔄 Follow-up' }
                                                     ].map(type => {
                                                         const isSelected = followUpForm.types.includes(type.id);
                                                         return (

@@ -159,7 +159,7 @@ const SHEET_CONFIG = {
     frozenCols: 2,
     frozenRows: 1,
     dropdowns: {
-      'Follow_Up_Type': ['Call', 'WhatsApp', 'Email', 'Meeting', 'Site Visit'],
+      'Follow_Up_Type': ['Call', 'WhatsApp', 'Email', 'Meeting', 'Site Visit', 'Follow-up'],
       'Priority': ['High', 'Medium', 'Low'],
       'Completed': ['Yes', 'No']
     }
