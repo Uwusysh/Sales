@@ -18,14 +18,24 @@ const priorityColors: Record<string, { bg: string; text: string; border: string 
 };
 
 // Follow-up type icons
-const getFollowUpIcon = (type: string) => {
-    switch (type?.toLowerCase()) {
-        case 'call': return <Phone className="w-4 h-4" />;
-        case 'whatsapp': return <MessageSquare className="w-4 h-4" />;
-        case 'email': return <Mail className="w-4 h-4" />;
-        case 'meeting': return <Video className="w-4 h-4" />;
-        default: return <Phone className="w-4 h-4" />;
-    }
+const getFollowUpIcons = (type: string) => {
+    const normalizedType = type?.toLowerCase() || '';
+    const icons: React.ReactNode[] = [];
+    
+    if (normalizedType.includes('call')) icons.push(<Phone key="call" className="w-4 h-4" />);
+    if (normalizedType.includes('whatsapp')) icons.push(<MessageSquare key="whatsapp" className="w-4 h-4" />);
+    if (normalizedType.includes('email')) icons.push(<Mail key="email" className="w-4 h-4" />);
+    if (normalizedType.includes('meeting')) icons.push(<Video key="meeting" className="w-4 h-4" />);
+    if (normalizedType.includes('site visit')) icons.push(<MapPin key="site" className="w-4 h-4" />);
+    if (normalizedType.includes('follow')) icons.push(<RefreshCw key="follow" className="w-4 h-4" />);
+    
+    if (icons.length === 0) icons.push(<Phone key="default" className="w-4 h-4" />);
+    
+    return (
+        <div className="flex items-center gap-1.5">
+            {icons}
+        </div>
+    );
 };
 
 export default function FollowUpsPage() {
@@ -43,7 +53,8 @@ export default function FollowUpsPage() {
     const [selectedFollowUp, setSelectedFollowUp] = useState<FollowUp | null>(null);
     const [completionForm, setCompletionForm] = useState({
         outcome: '',
-        nextDate: ''
+        nextDate: '',
+        nextTypes: ['Call'] as string[]
     });
     const [viewMode, setViewMode] = useState<'my' | 'all'>('my');
     const [completingId, setCompletingId] = useState<string | null>(null);
@@ -112,12 +123,13 @@ export default function FollowUpsPage() {
                 selectedFollowUp.lead_id,
                 selectedFollowUp.follow_up_date,
                 completionForm.outcome,
-                completionForm.nextDate || undefined
+                completionForm.nextDate || undefined,
+                completionForm.nextTypes.length > 0 ? completionForm.nextTypes.join(', ') : undefined
             );
 
             // Reset and reload
             setSelectedFollowUp(null);
-            setCompletionForm({ outcome: '', nextDate: '' });
+            setCompletionForm({ outcome: '', nextDate: '', nextTypes: ['Call'] });
             await loadFollowUps();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to complete follow-up');
@@ -329,8 +341,8 @@ export default function FollowUpsPage() {
                             {/* Type */}
                             <div className="col-span-1">
                                 <div className="flex items-center gap-2">
-                                    {getFollowUpIcon(followUp.follow_up_type)}
-                                    <span className="text-sm text-muted-foreground hidden lg:inline">
+                                    {getFollowUpIcons(followUp.follow_up_type)}
+                                    <span className="text-[10px] text-muted-foreground hidden lg:inline truncate max-w-[60px]">
                                         {followUp.follow_up_type}
                                     </span>
                                 </div>
@@ -414,7 +426,7 @@ export default function FollowUpsPage() {
                         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
                         onClick={() => {
                             setSelectedFollowUp(null);
-                            setCompletionForm({ outcome: '', nextDate: '' });
+                            setCompletionForm({ outcome: '', nextDate: '', nextTypes: ['Call'] });
                         }}
                     />
                     <div className="relative w-full max-w-lg bg-card shadow-2xl rounded-xl animate-in zoom-in-95 duration-200">
@@ -431,7 +443,7 @@ export default function FollowUpsPage() {
                             <button
                                 onClick={() => {
                                     setSelectedFollowUp(null);
-                                    setCompletionForm({ outcome: '', nextDate: '' });
+                                    setCompletionForm({ outcome: '', nextDate: '', nextTypes: ['Call'] });
                                 }}
                                 className="p-2 hover:bg-secondary rounded-lg"
                             >
@@ -451,7 +463,10 @@ export default function FollowUpsPage() {
                                 </div>
                                 <div className="flex items-center justify-between text-sm">
                                     <span className="text-muted-foreground">Type:</span>
-                                    <span className="font-medium">{selectedFollowUp.follow_up_type}</span>
+                                    <div className="flex items-center gap-2 font-medium">
+                                        {getFollowUpIcons(selectedFollowUp.follow_up_type)}
+                                        <span>{selectedFollowUp.follow_up_type}</span>
+                                    </div>
                                 </div>
                                 {selectedFollowUp.notes && (
                                     <div className="pt-2 border-t border-border">
@@ -475,16 +490,64 @@ export default function FollowUpsPage() {
                             </div>
 
                             {/* Next Follow-Up Date */}
-                            <div>
-                                <label className="text-sm font-medium text-foreground mb-2 block">
-                                    Next Follow-Up Date (Optional)
-                                </label>
-                                <input
-                                    type="date"
-                                    value={completionForm.nextDate}
-                                    onChange={(e) => setCompletionForm({ ...completionForm, nextDate: e.target.value })}
-                                    className="w-full p-3 rounded-lg border border-border bg-background text-sm"
-                                />
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-sm font-medium text-foreground mb-2 block">
+                                        Next Follow-Up Date (Optional)
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={completionForm.nextDate}
+                                        onChange={(e) => setCompletionForm({ ...completionForm, nextDate: e.target.value })}
+                                        className="w-full p-3 rounded-lg border border-border bg-background text-sm"
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label className="text-sm font-medium text-foreground mb-2 block">
+                                        Next Type (Select multiple)
+                                    </label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {[
+                                            { id: 'Call', label: '📞 Call' },
+                                            { id: 'WhatsApp', label: '💬 WhatsApp' },
+                                            { id: 'Email', label: '📧 Email' },
+                                            { id: 'Meeting', label: '🤝 Meeting' },
+                                            { id: 'Site Visit', label: '🏗️ Site Visit' },
+                                            { id: 'Follow-up', label: '🔄 Follow-up' }
+                                        ].map(type => {
+                                            const isSelected = completionForm.nextTypes.includes(type.id);
+                                            return (
+                                                <button
+                                                    key={type.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (isSelected) {
+                                                            setCompletionForm({
+                                                                ...completionForm,
+                                                                nextTypes: completionForm.nextTypes.filter(t => t !== type.id)
+                                                            });
+                                                        } else {
+                                                            setCompletionForm({
+                                                                ...completionForm,
+                                                                nextTypes: [...completionForm.nextTypes, type.id]
+                                                            });
+                                                        }
+                                                    }}
+                                                    className={`
+                                                        px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
+                                                        ${isSelected
+                                                            ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                                                            : 'bg-background border-border text-muted-foreground hover:bg-secondary'
+                                                        }
+                                                    `}
+                                                >
+                                                    {type.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -493,7 +556,7 @@ export default function FollowUpsPage() {
                             <button
                                 onClick={() => {
                                     setSelectedFollowUp(null);
-                                    setCompletionForm({ outcome: '', nextDate: '' });
+                                    setCompletionForm({ outcome: '', nextDate: '', nextTypes: ['Call'] });
                                 }}
                                 className="px-4 py-2 text-sm text-muted-foreground hover:bg-secondary rounded-lg"
                             >
