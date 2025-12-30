@@ -14,7 +14,9 @@ let leadsCache = {
 /**
  * GET /api/leads
  * Fetch all leads with filters, search, sorting, and pagination
- * PROTECTED: Only returns leads for the authenticated agent
+ * PROTECTED: Returns leads based on user role:
+ *   - Admin (Pushpalata): Can see all leads when viewAll=true
+ *   - Agent: Can only see their own leads
  */
 router.get('/', async (req, res, next) => {
   try {
@@ -28,7 +30,8 @@ router.get('/', async (req, res, next) => {
       limit = 100,
       offset = 0,
       followUpToday,
-      srfIncomplete
+      srfIncomplete,
+      viewAll
     } = req.query;
 
     const service = getEnhancedSheetsService();
@@ -36,7 +39,10 @@ router.get('/', async (req, res, next) => {
 
     // Get authenticated user from JWT token
     const authenticatedAgent = req.user.agentName;
-    console.log(`🔒 User "${authenticatedAgent}" accessing their leads`);
+    const userRole = req.user.role;
+    const isAdmin = userRole === 'admin';
+    
+    console.log(`🔒 User "${authenticatedAgent}" (${userRole}) accessing leads`);
 
     // Get leads with caching
     const isStale = !leadsCache.data || (now - leadsCache.lastFetch) > leadsCache.ttl;
@@ -50,15 +56,19 @@ router.get('/', async (req, res, next) => {
 
     let filteredLeads = [...leadsCache.data];
 
-    // 🔒 SECURITY: Always filter by authenticated user's agent name
-    // This ensures users can ONLY see their own leads
-    filteredLeads = filteredLeads.filter(l => {
-      const leadOwner = String(l.lead_owner || '').trim();
-      // Match the exact agent name (case-insensitive)
-      return leadOwner.toLowerCase() === authenticatedAgent.toLowerCase();
-    });
-
-    console.log(`🔒 Filtered to ${filteredLeads.length} leads for agent "${authenticatedAgent}"`);
+    // 🔒 SECURITY: Filter leads based on user role
+    // Admin can see all leads when viewAll=true, otherwise filter by agent
+    // Regular agents can ONLY see their own leads
+    if (isAdmin && viewAll === 'true') {
+      console.log(`👑 Admin "${authenticatedAgent}" viewing ALL leads (${filteredLeads.length} total)`);
+    } else {
+      // Filter by authenticated user's agent name
+      filteredLeads = filteredLeads.filter(l => {
+        const leadOwner = String(l.lead_owner || '').trim();
+        return leadOwner.toLowerCase() === authenticatedAgent.toLowerCase();
+      });
+      console.log(`🔒 Filtered to ${filteredLeads.length} leads for agent "${authenticatedAgent}"`);
+    }
 
     // Apply additional filters
     if (status && status !== 'all' && status !== '') {
@@ -193,27 +203,36 @@ router.get('/', async (req, res, next) => {
 /**
  * GET /api/leads/stats
  * Get dashboard statistics
- * PROTECTED: Only returns stats for authenticated agent's leads
+ * PROTECTED: Returns stats based on user role:
+ *   - Admin: Gets total leads count for all + their own stats
+ *   - Agent: Gets only their own leads stats
  */
 router.get('/stats', async (req, res, next) => {
   try {
     const authenticatedAgent = req.user.agentName;
+    const userRole = req.user.role;
+    const isAdmin = userRole === 'admin';
     const service = getEnhancedSheetsService();
     
-    // Get all leads and filter by agent
+    // Get all leads
     const allLeads = await service.getLeads();
+    
+    // Filter leads for agent
     const agentLeads = allLeads.filter(l => 
       String(l.lead_owner || '').trim().toLowerCase() === authenticatedAgent.toLowerCase()
     );
 
-    // Calculate stats from filtered leads
+    // Calculate stats from agent's leads
     const stats = {
-      totalLeads: agentLeads.length,
+      // For admin: show total database count, for agent: show their own count
+      totalLeads: isAdmin ? allLeads.length : agentLeads.length,
+      myLeads: agentLeads.length,
       newLeads: agentLeads.filter(l => l.status === 'New').length,
       working: agentLeads.filter(l => l.status === 'Working').length,
       sql: agentLeads.filter(l => l.status === 'SQL').length,
       won: agentLeads.filter(l => l.status === 'PO RCVD').length,
       lost: agentLeads.filter(l => l.status === 'Lost').length,
+      isAdmin: isAdmin
     };
 
     res.json({
