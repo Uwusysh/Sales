@@ -9,6 +9,7 @@ import {
 import {
     fetchActiveFollowUps, completeFollowUp, FollowUp
 } from '../lib/api';
+import { VoiceInput } from '../components/ui/VoiceInput';
 
 // Priority colors
 const priorityColors: Record<string, { bg: string; text: string; border: string }> = {
@@ -481,11 +482,12 @@ export default function FollowUpsPage() {
                                 <label className="text-sm font-medium text-foreground mb-2 block">
                                     Outcome / Notes
                                 </label>
-                                <textarea
+                                <VoiceInput
                                     value={completionForm.outcome}
-                                    onChange={(e) => setCompletionForm({ ...completionForm, outcome: e.target.value })}
-                                    placeholder="What happened during this follow-up?"
-                                    className="w-full p-3 rounded-lg border border-border bg-background text-sm min-h-[100px]"
+                                    onChange={(val) => setCompletionForm({ ...completionForm, outcome: val })}
+                                    placeholder="What happened during this follow-up? (Type or speak)"
+                                    className="bg-background"
+                                    minHeight="100px"
                                 />
                             </div>
 
