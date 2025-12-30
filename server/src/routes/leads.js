@@ -680,7 +680,7 @@ router.post('/:id/followup', async (req, res, next) => {
     }
 
     // 🔒 SECURITY: Verify ownership before creating followup
-    const leadOwner = String(lead.lead_owner || '').trim();
+    const leadOwner = String(lead.lead_owner || lead.sales_owner || '').trim();
     if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
       console.warn(`🚫 Unauthorized followup creation: ${authenticatedAgent} tried to create followup for ${leadOwner}'s lead ${id}`);
       return res.status(403).json({ 
@@ -699,18 +699,23 @@ router.post('/:id/followup', async (req, res, next) => {
 
     // Update lead's follow-up date
     await service.updateLead(id, {
-      Follow_Up_Date: followUpData.follow_up_date
+      follow_up_date: followUpData.follow_up_date,
+      remarks: followUpData.notes ? `[Follow-up scheduled] ${followUpData.notes}` : ''
     });
 
     leadsCache.data = null;
 
     res.json({
       success: true,
-      message: 'Follow-up scheduled',
+      message: 'Follow-up scheduled successfully',
       data: result
     });
   } catch (error) {
-    next(error);
+    console.error('❌ Error in scheduleFollowUp route:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to schedule follow-up: ' + error.message 
+    });
   }
 });
 

@@ -276,7 +276,8 @@ export default function LeadsPage() {
 
         try {
             setIsDetailLoading(true);
-            await scheduleFollowUp(selectedLead.id, {
+            const leadId = selectedLead.lead_id || selectedLead.enquiry_code || selectedLead.id;
+            await scheduleFollowUp(leadId, {
                 follow_up_date: followUpForm.date,
                 follow_up_time: followUpForm.time,
                 notes: followUpForm.notes,
@@ -285,7 +286,7 @@ export default function LeadsPage() {
             });
 
             // Refresh details
-            const res = await fetchLeadById(selectedLead.id);
+            const res = await fetchLeadById(leadId);
             setSelectedLead(res.data);
 
             // Reset form
@@ -296,6 +297,7 @@ export default function LeadsPage() {
             loadLeads();
         } catch (err) {
             console.error('Failed to schedule follow-up:', err);
+            alert(err instanceof Error ? err.message : 'Failed to schedule follow-up');
         } finally {
             setIsDetailLoading(false);
         }
@@ -900,6 +902,7 @@ export default function LeadsPage() {
                                     </h3>
                                     {!showFollowUpForm && (
                                         <button
+                                            type="button"
                                             onClick={() => setShowFollowUpForm(true)}
                                             className="text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-lg hover:bg-primary/90 transition-colors"
                                         >
@@ -947,6 +950,7 @@ export default function LeadsPage() {
                                                         return (
                                                             <button
                                                                 key={type.id}
+                                                                type="button"
                                                                 onClick={() => {
                                                                     if (isSelected) {
                                                                         setFollowUpForm({
@@ -985,12 +989,14 @@ export default function LeadsPage() {
                                             </div>
                                             <div className="flex justify-end gap-2 pt-2">
                                                 <button
+                                                    type="button"
                                                     onClick={() => setShowFollowUpForm(false)}
                                                     className="px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary rounded"
                                                 >
                                                     Cancel
                                                 </button>
                                                 <button
+                                                    type="button"
                                                     onClick={handleScheduleFollowUp}
                                                     disabled={!followUpForm.date}
                                                     className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"

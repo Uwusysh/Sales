@@ -744,26 +744,47 @@ export class EnhancedSheetsService {
   }
 
   async createFollowUp(followUpData) {
-    const sheet = await this.getOrCreateSheet('Daily Follow-up DB');
+    try {
+      const sheet = await this.getOrCreateSheet('Daily Follow-up DB');
+      
+      if (!sheet) {
+        throw new Error('Could not access Daily Follow-up DB sheet');
+      }
+      
+      // Ensure headers are loaded
+      try {
+        await sheet.loadHeaderRow();
+      } catch (headerErr) {
+        console.log('Setting up headers for Daily Follow-up DB...');
+        await sheet.setHeaderRow(SHEET_CONFIG['Daily Follow-up DB'].headers);
+      }
 
-    const newRow = await this.withRetry(async () => {
-      return await sheet.addRow({
-        'Lead_ID': followUpData.lead_id,
-        'Follow_Up_Date': followUpData.follow_up_date,
+      const rowData = {
+        'Lead_ID': followUpData.lead_id || '',
+        'Follow_Up_Date': followUpData.follow_up_date || '',
         'Follow_Up_Time': followUpData.follow_up_time || '',
-        'Sales_Owner': followUpData.sales_owner,
-        'Client_Name': followUpData.client_name,
-        'Client_Number': followUpData.client_number,
+        'Sales_Owner': followUpData.sales_owner || '',
+        'Client_Name': followUpData.client_name || '',
+        'Client_Number': followUpData.client_number || '',
         'Follow_Up_Type': followUpData.follow_up_type || 'Call',
         'Priority': followUpData.priority || 'Medium',
         'Notes': followUpData.notes || '',
         'Completed': 'No',
         'Created_At': new Date().toISOString()
-      });
-    }, 'createFollowUp');
+      };
 
-    this.cache.followups.data = null;
-    return { success: true, rowNumber: newRow.rowNumber };
+      console.log('📝 Creating follow-up entry:', rowData);
+
+      const newRow = await this.withRetry(async () => {
+        return await sheet.addRow(rowData);
+      }, 'createFollowUp');
+
+      this.cache.followups.data = null;
+      return { success: true, rowNumber: newRow?.rowNumber || 0 };
+    } catch (error) {
+      console.error('❌ Error in createFollowUp:', error);
+      throw new Error(`Failed to create follow-up: ${error.message}`);
+    }
   }
 
   /**
@@ -1204,6 +1225,7 @@ export class EnhancedSheetsService {
       'status': 'Status',
       'remarks': 'Remarks',
       'follow_up_date': 'Follow_Up_Date',
+      'follow_up_remarks': 'Follow_Up_Remarks',
       'expected_closure': 'Expected_Closure'
     };
     return mapping[str] || str;
