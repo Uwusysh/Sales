@@ -13,6 +13,7 @@ import {
     fetchLeadById, scheduleFollowUp
 } from '../lib/api';
 import { AddLeadModal } from '../components/leads/AddLeadModal';
+import { VoiceInput } from '../components/ui/VoiceInput';
 
 // Status color mapping with enhanced styling
 const statusColors: Record<string, { bg: string; text: string; border: string; dot: string }> = {
@@ -953,11 +954,11 @@ export default function LeadsPage() {
                                             </div>
                                             <div>
                                                 <label className="text-[10px] text-muted-foreground uppercase font-semibold mb-1 block">Notes / Remarks</label>
-                                                <textarea
+                                                <VoiceInput
                                                     value={followUpForm.notes}
-                                                    onChange={e => setFollowUpForm({ ...followUpForm, notes: e.target.value })}
-                                                    placeholder="What happened? What's next?"
-                                                    className="w-full text-sm p-2 rounded border border-border min-h-[60px]"
+                                                    onChange={(val) => setFollowUpForm({ ...followUpForm, notes: val })}
+                                                    placeholder="What happened? What's next? (Type or speak)"
+                                                    minHeight="60px"
                                                 />
                                             </div>
                                             <div className="flex justify-end gap-2 pt-2">
