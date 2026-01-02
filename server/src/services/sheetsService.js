@@ -46,6 +46,16 @@ const SHEET_CONFIG = {
       'Sales_Owner',
       'Follow_Up_Date',
       'Follow_Up_Remarks',
+      'Follow_Up_1_Date',
+      'Follow_Up_1_Notes',
+      'Follow_Up_2_Date',
+      'Follow_Up_2_Notes',
+      'Follow_Up_3_Date',
+      'Follow_Up_3_Notes',
+      'Follow_Up_4_Date',
+      'Follow_Up_4_Notes',
+      'Follow_Up_5_Date',
+      'Follow_Up_5_Notes',
       'SRF_Completion_Pct', // SRF completion percentage
       'SRF_PDF_Link',
       'Quotation_Link',
@@ -523,6 +533,17 @@ export class EnhancedSheetsService {
       sales_owner: row.get('Sales_Owner'),
       follow_up_date: row.get('Follow_Up_Date'),
       follow_up_remarks: row.get('Follow_Up_Remarks'),
+      // Multiple follow-up columns
+      follow_up_1_date: row.get('Follow_Up_1_Date'),
+      follow_up_1_notes: row.get('Follow_Up_1_Notes'),
+      follow_up_2_date: row.get('Follow_Up_2_Date'),
+      follow_up_2_notes: row.get('Follow_Up_2_Notes'),
+      follow_up_3_date: row.get('Follow_Up_3_Date'),
+      follow_up_3_notes: row.get('Follow_Up_3_Notes'),
+      follow_up_4_date: row.get('Follow_Up_4_Date'),
+      follow_up_4_notes: row.get('Follow_Up_4_Notes'),
+      follow_up_5_date: row.get('Follow_Up_5_Date'),
+      follow_up_5_notes: row.get('Follow_Up_5_Notes'),
       srf_completion_pct: row.get('SRF_Completion_Pct'),
       srf_pdf_link: row.get('SRF_PDF_Link'),
       quotation_link: row.get('Quotation_Link'),
@@ -862,47 +883,118 @@ export class EnhancedSheetsService {
   }
 
   /**
-   * Mark a follow-up as completed
+   * Schedule a follow-up directly in Leads Master sheet using sequential columns
    */
-  async completeFollowUp(leadId, followUpDate, outcome = '', nextFollowUpDate = null) {
-    const sheet = await this.getOrCreateSheet('Daily Follow-up DB');
-    const rows = await this.withRetry(async () => sheet.getRows(), 'completeFollowUp-fetch');
+  async scheduleFollowUpInLeads(leadId, followUpDate, notes = '', followUpType = 'Call') {
+    const sheet = await this.getOrCreateSheet('Leads Master');
+    const rows = await this.withRetry(async () => sheet.getRows(), 'scheduleFollowUpInLeads');
 
-    // Find the specific follow-up entry
-    const row = rows.find(r =>
-      r.get('Lead_ID') === leadId &&
-      r.get('Follow_Up_Date') === followUpDate &&
-      r.get('Completed') !== 'Yes'
-    );
+    const row = rows.find(r => r.get('Lead_ID') === leadId || r.get('Enquiry_Code') === leadId);
 
     if (!row) {
-      return { success: false, error: 'Follow-up entry not found or already completed' };
+      return { success: false, error: 'Lead not found' };
     }
 
-    // Mark as completed
-    row.set('Completed', 'Yes');
-    if (outcome) {
-      const existingNotes = row.get('Notes') || '';
-      row.set('Notes', existingNotes + '\n[COMPLETED] ' + outcome);
+    // Find the next available follow-up slot (1-5)
+    let nextSlot = 1;
+    for (let i = 1; i <= 5; i++) {
+      const dateField = `Follow_Up_${i}_Date`;
+      const notesField = `Follow_Up_${i}_Notes`;
+
+      if (!row.get(dateField) || row.get(dateField) === '') {
+        nextSlot = i;
+        break;
+      }
+
+      // If we reach slot 5 and all are filled, use slot 5 (overwrite oldest)
+      if (i === 5) {
+        nextSlot = 5;
+      }
     }
-    row.set('Status_After', outcome || 'Completed');
+
+    const dateField = `Follow_Up_${nextSlot}_Date`;
+    const notesField = `Follow_Up_${nextSlot}_Notes`;
+
+    // Save follow-up data
+    row.set(dateField, followUpDate);
+    row.set(notesField, `[${new Date().toLocaleDateString('en-IN')}] ${followUpType}: ${notes}`);
+
+    // Also update the main Follow_Up_Date for compatibility
+    row.set('Follow_Up_Date', followUpDate);
+    row.set('Updated_At', new Date().toISOString());
+
+    await this.withRetry(async () => {
+      await row.save();
+    }, 'scheduleFollowUpInLeads-save');
+
+    // Invalidate cache
+    this.cache.leads.data = null;
+
+    return {
+      success: true,
+      message: `Follow-up scheduled in slot ${nextSlot}`,
+      slot: nextSlot
+    };
+  }
+
+  /**
+   * Mark a follow-up as completed by updating the appropriate follow-up column
+   */
+  async completeFollowUp(leadId, followUpDate, outcome = '', nextFollowUpDate = null, nextFollowUpType = 'Call') {
+    const sheet = await this.getOrCreateSheet('Leads Master');
+    const rows = await this.withRetry(async () => sheet.getRows(), 'completeFollowUp-fetch');
+
+    const row = rows.find(r => r.get('Lead_ID') === leadId || r.get('Enquiry_Code') === leadId);
+
+    if (!row) {
+      return { success: false, error: 'Lead not found' };
+    }
+
+    // Find the follow-up slot that matches the date
+    let foundSlot = null;
+    for (let i = 1; i <= 5; i++) {
+      const dateField = `Follow_Up_${i}_Date`;
+      const notesField = `Follow_Up_${i}_Notes`;
+
+      if (row.get(dateField) === followUpDate) {
+        foundSlot = i;
+        // Mark as completed by appending to notes
+        const existingNotes = row.get(notesField) || '';
+        const completionNote = `\n[COMPLETED ${new Date().toLocaleDateString('en-IN')}] ${outcome || 'Marked as done'}`;
+        row.set(notesField, existingNotes + completionNote);
+        break;
+      }
+    }
+
+    if (!foundSlot) {
+      return { success: false, error: 'Follow-up not found in any slot' };
+    }
+
+    // Schedule next follow-up if provided
+    if (nextFollowUpDate) {
+      const nextResult = await this.scheduleFollowUpInLeads(leadId, nextFollowUpDate, '', nextFollowUpType);
+      if (!nextResult.success) {
+        console.warn('Failed to schedule next follow-up:', nextResult.error);
+      }
+    } else {
+      // Clear main follow-up date since it's completed
+      row.set('Follow_Up_Date', '');
+    }
+
+    row.set('Updated_At', new Date().toISOString());
 
     await this.withRetry(async () => {
       await row.save();
     }, 'completeFollowUp-save');
 
-    // Update lead's follow-up date if next date is provided
-    if (nextFollowUpDate) {
-      await this.updateLead(leadId, {
-        Follow_Up_Date: nextFollowUpDate
-      });
-    }
-
     // Invalidate caches
-    this.cache.followups.data = null;
     this.cache.leads.data = null;
 
-    return { success: true, message: 'Follow-up marked as completed' };
+    return {
+      success: true,
+      message: `Follow-up in slot ${foundSlot} marked as completed`,
+      completedSlot: foundSlot
+    };
   }
 
   // ============ QUOTATION OPERATIONS ============

@@ -351,12 +351,9 @@ router.get('/check-duplicate', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-<<<<<<< Updated upstream
-=======
     const authenticatedAgent = req.user.agentName;
     const userRole = req.user.role;
     const isAdmin = userRole === 'admin';
->>>>>>> Stashed changes
     const service = getEnhancedSheetsService();
     
     console.log(`📋 Fetching lead by ID: "${id}" for user "${authenticatedAgent}"`);
@@ -562,7 +559,8 @@ router.patch('/:id/status', async (req, res, next) => {
 router.post('/:id/followup', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const followUpData = req.body;
+    const { follow_up_date, notes, follow_up_type = 'Call' } = req.body;
+    const authenticatedAgent = req.user.agentName;
 
     const service = getEnhancedSheetsService();
     const lead = await service.getLeadById(id);
@@ -571,28 +569,41 @@ router.post('/:id/followup', async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Lead not found' });
     }
 
-    // Create follow-up entry
-    const result = await service.createFollowUp({
-      lead_id: lead.lead_id || lead.enquiry_code,
-      client_name: lead.client_person || lead.client_company,
-      client_number: lead.client_number,
-      ...followUpData
-    });
+    // 🔒 SECURITY: Verify ownership before creating followup
+    const leadOwner = String(lead.lead_owner || lead.sales_owner || '').trim();
+    if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
+      console.warn(`🚫 Unauthorized followup creation: ${authenticatedAgent} tried to create followup for ${leadOwner}'s lead ${id}`);
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You can only manage followups for your own leads'
+      });
+    }
 
-    // Update lead's follow-up date
-    await service.updateLead(id, {
-      Follow_Up_Date: followUpData.follow_up_date
-    });
+    // Schedule follow-up directly in Leads Master using sequential columns
+    const result = await service.scheduleFollowUpInLeads(
+      lead.lead_id || lead.enquiry_code,
+      follow_up_date,
+      notes || '', // Only save notes, not date statements
+      follow_up_type
+    );
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
 
     leadsCache.data = null;
 
     res.json({
       success: true,
-      message: 'Follow-up scheduled',
+      message: 'Follow-up scheduled successfully',
       data: result
     });
   } catch (error) {
-    next(error);
+    console.error('❌ Error in scheduleFollowUp route:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to schedule follow-up: ' + error.message
+    });
   }
 });
 

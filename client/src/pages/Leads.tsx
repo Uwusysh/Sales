@@ -60,10 +60,34 @@ const SRFProgress: React.FC<{ percentage: string }> = ({ percentage }) => {
 };
 
 // Follow-up Badge Component
-const FollowUpBadge: React.FC<{ date: string }> = ({ date }) => {
-    if (!date) return null;
+const FollowUpBadge: React.FC<{ lead: Lead }> = ({ lead }) => {
+    // Check all follow-up columns for the next upcoming or overdue date
+    const followUpDates = [];
+    for (let i = 1; i <= 5; i++) {
+        const dateField = `follow_up_${i}_date` as keyof Lead;
+        const date = lead[dateField] as string;
+        if (date) {
+            followUpDates.push({
+                date,
+                slot: i,
+                notes: lead[`follow_up_${i}_notes` as keyof Lead] as string
+            });
+        }
+    }
 
+    // Sort by date and find the most relevant one (next upcoming or most overdue)
     const today = new Date().toISOString().split('T')[0];
+    const sortedDates = followUpDates
+        .filter(fu => fu.date) // Only dates that exist
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    // Find the most relevant follow-up (next upcoming or most overdue)
+    const relevantFollowUp = sortedDates.find(fu => fu.date >= today) || // Next upcoming
+                           sortedDates[sortedDates.length - 1]; // Most recent if all past
+
+    if (!relevantFollowUp) return null;
+
+    const { date } = relevantFollowUp;
     const isToday = date === today;
     const isPast = date < today;
     const isTomorrow = (() => {
@@ -690,7 +714,7 @@ export default function LeadsPage() {
 
                             {/* Follow-up */}
                             <div className="col-span-1 hidden md:block">
-                                <FollowUpBadge date={lead.follow_up_date} />
+                                <FollowUpBadge lead={lead} />
                             </div>
 
                             {/* Owner */}
@@ -875,7 +899,7 @@ export default function LeadsPage() {
                                         <p className="text-muted-foreground text-xs">Follow-up Date</p>
                                         <div className="flex items-center gap-2">
                                             <p className="font-medium">{selectedLead.follow_up_date || '-'}</p>
-                                            <FollowUpBadge date={selectedLead.follow_up_date} />
+                                            <FollowUpBadge lead={selectedLead} />
                                         </div>
                                     </div>
                                     <div>
@@ -1001,46 +1025,69 @@ export default function LeadsPage() {
                                         </div>
                                     ) : (
                                         <>
-                                            {selectedLead.followups && selectedLead.followups.length > 0 ? (
-                                                <div className="relative border-l border-primary/20 ml-2 space-y-6 pl-4 pb-2">
-                                                    {selectedLead.followups.map((fu, idx) => (
-                                                        <div key={idx} className="relative">
-                                                            <div className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-background ${fu.completed === 'Yes' ? 'bg-green-500' :
-                                                                new Date(fu.follow_up_date) < new Date() ? 'bg-red-500' : 'bg-primary'
+                                            {/* Display follow-ups from all columns */}
+                                            {(() => {
+                                                const followUps = [];
+                                                for (let i = 1; i <= 5; i++) {
+                                                    const dateField = `follow_up_${i}_date` as keyof Lead;
+                                                    const notesField = `follow_up_${i}_notes` as keyof Lead;
+                                                    const date = selectedLead[dateField] as string;
+                                                    const notes = selectedLead[notesField] as string;
+
+                                                    if (date) {
+                                                        followUps.push({
+                                                            date,
+                                                            notes: notes || '',
+                                                            slot: i,
+                                                            isCompleted: notes?.includes('[COMPLETED]')
+                                                        });
+                                                    }
+                                                }
+
+                                                return followUps.length > 0 ? (
+                                                    <div className="relative border-l border-primary/20 ml-2 space-y-6 pl-4 pb-2">
+                                                        {followUps.map((fu, idx) => (
+                                                            <div key={idx} className="relative">
+                                                                <div className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-background ${
+                                                                    fu.isCompleted ? 'bg-green-500' :
+                                                                    new Date(fu.date) < new Date() ? 'bg-red-500' : 'bg-primary'
                                                                 }`} />
-                                                            <div className="flex flex-col gap-1">
-                                                                <div className="flex items-center gap-2 text-xs">
-                                                                    <span className="font-semibold text-foreground">
-                                                                        {new Date(fu.follow_up_date).toLocaleDateString('en-IN', {
-                                                                            day: 'numeric', month: 'short', year: 'numeric'
-                                                                        })}
-                                                                    </span>
-                                                                    <span className="bg-secondary px-1.5 rounded text-[10px] text-muted-foreground">
-                                                                        {fu.follow_up_type}
-                                                                    </span>
-                                                                    {fu.sales_owner && (
-                                                                        <span className="text-muted-foreground text-[10px]">by {fu.sales_owner}</span>
+                                                                <div className="flex flex-col gap-1">
+                                                                    <div className="flex items-center gap-2 text-xs">
+                                                                        <span className="font-semibold text-foreground">
+                                                                            {new Date(fu.date).toLocaleDateString('en-IN', {
+                                                                                day: 'numeric', month: 'short', year: 'numeric'
+                                                                            })}
+                                                                        </span>
+                                                                        <span className="bg-secondary px-1.5 rounded text-[10px] text-muted-foreground">
+                                                                            Follow-up #{fu.slot}
+                                                                        </span>
+                                                                        {fu.isCompleted && (
+                                                                            <span className="bg-green-100 text-green-700 px-1.5 rounded text-[10px] font-medium">
+                                                                                Completed
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    {fu.notes && (
+                                                                        <p className="text-sm text-muted-foreground bg-background/50 p-2 rounded border border-border/50 whitespace-pre-wrap">
+                                                                            {fu.notes}
+                                                                        </p>
                                                                     )}
                                                                 </div>
-                                                                {fu.notes && (
-                                                                    <p className="text-sm text-muted-foreground bg-background/50 p-2 rounded border border-border/50">
-                                                                        {fu.notes}
-                                                                    </p>
-                                                                )}
                                                             </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <div className="text-center py-4 text-xs text-muted-foreground">
-                                                    No history found.
-                                                </div>
-                                            )}
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-4 text-xs text-muted-foreground">
+                                                        No follow-ups scheduled.
+                                                    </div>
+                                                );
+                                            })()}
                                         </>
                                     )}
 
                                     {/* Legacy Remarks Fallback */}
-                                    {selectedLead.remarks && (!selectedLead.followups || selectedLead.followups.length === 0) && (
+                                    {selectedLead.remarks && (
                                         <div className="mt-4 pt-4 border-t border-border">
                                             <p className="text-xs font-semibold text-muted-foreground mb-1">Legacy Remarks</p>
                                             <p className="text-sm text-foreground whitespace-pre-wrap bg-background p-2 rounded border border-border">

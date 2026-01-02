@@ -42,6 +42,17 @@ export interface Lead {
   sales_owner: string;
   follow_up_date: string;
   follow_up_remarks: string;
+  // Multiple follow-up columns
+  follow_up_1_date: string;
+  follow_up_1_notes: string;
+  follow_up_2_date: string;
+  follow_up_2_notes: string;
+  follow_up_3_date: string;
+  follow_up_3_notes: string;
+  follow_up_4_date: string;
+  follow_up_4_notes: string;
+  follow_up_5_date: string;
+  follow_up_5_notes: string;
   srf_completion_pct: string;
   srf_pdf_link: string;
   quotation_link: string;
