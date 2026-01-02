@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AppLayout } from '../components/layout/AppLayout';
 import {
   TrendingUp, Users, Phone, DollarSign, AlertCircle, RefreshCw,
   Calendar, Clock, Target, ArrowRight, CheckCircle, XCircle,
   BarChart3, PieChart, Activity, Bell, ChevronRight
 } from 'lucide-react';
-import { fetchLeadStats, fetchTodayFollowUps, fetchLeads, StatsResponse, FollowUp, formatValue } from '../lib/api';
+import { fetchLeadStats, fetchTodayFollowUps, fetchLeads, StatsResponse, FollowUp, formatValue, ApiError } from '../lib/api';
 
 // Quick metric card component
 interface MetricCardProps {
@@ -131,8 +131,14 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  
+  // Ref to track if we should stop polling (after auth error)
+  const shouldPollRef = useRef(true);
 
   const loadData = async () => {
+    // Don't fetch if we've had an auth error
+    if (!shouldPollRef.current) return;
+    
     try {
       setLoading(true);
       const [statsRes, followUpsRes, leadsRes] = await Promise.all([
@@ -146,6 +152,11 @@ export default function DashboardPage() {
       setLastUpdate(new Date());
       setError(null);
     } catch (err) {
+      // Stop polling on auth errors to prevent retry loops
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        shouldPollRef.current = false;
+        return; // Auth handler will redirect to login
+      }
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
     } finally {
       setLoading(false);
@@ -154,7 +165,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 30000);
+    const interval = setInterval(() => {
+      if (shouldPollRef.current) {
+        loadData();
+      }
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
