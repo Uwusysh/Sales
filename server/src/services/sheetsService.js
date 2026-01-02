@@ -46,6 +46,16 @@ const SHEET_CONFIG = {
       'Sales_Owner',
       'Follow_Up_Date',
       'Follow_Up_Remarks',
+      'Follow_Up_1_Date',
+      'Follow_Up_1_Notes',
+      'Follow_Up_2_Date',
+      'Follow_Up_2_Notes',
+      'Follow_Up_3_Date',
+      'Follow_Up_3_Notes',
+      'Follow_Up_4_Date',
+      'Follow_Up_4_Notes',
+      'Follow_Up_5_Date',
+      'Follow_Up_5_Notes',
       'SRF_Completion_Pct', // SRF completion percentage
       'SRF_PDF_Link',
       'Quotation_Link',
@@ -523,6 +533,16 @@ export class EnhancedSheetsService {
       sales_owner: row.get('Sales_Owner'),
       follow_up_date: row.get('Follow_Up_Date'),
       follow_up_remarks: row.get('Follow_Up_Remarks'),
+      follow_up_1_date: row.get('Follow_Up_1_Date'),
+      follow_up_1_notes: row.get('Follow_Up_1_Notes'),
+      follow_up_2_date: row.get('Follow_Up_2_Date'),
+      follow_up_2_notes: row.get('Follow_Up_2_Notes'),
+      follow_up_3_date: row.get('Follow_Up_3_Date'),
+      follow_up_3_notes: row.get('Follow_Up_3_Notes'),
+      follow_up_4_date: row.get('Follow_Up_4_Date'),
+      follow_up_4_notes: row.get('Follow_Up_4_Notes'),
+      follow_up_5_date: row.get('Follow_Up_5_Date'),
+      follow_up_5_notes: row.get('Follow_Up_5_Notes'),
       srf_completion_pct: row.get('SRF_Completion_Pct'),
       srf_pdf_link: row.get('SRF_PDF_Link'),
       quotation_link: row.get('Quotation_Link'),
@@ -764,6 +784,57 @@ export class EnhancedSheetsService {
 
     this.cache.followups.data = null;
     return { success: true, rowNumber: newRow.rowNumber };
+  }
+
+  /**
+   * Schedule a follow-up in the Leads Master sheet (Sequential Columns)
+   */
+  async scheduleFollowUpInLeads(leadId, followUpData) {
+    const sheet = await this.getOrCreateSheet('Leads Master');
+    const rows = await this.withRetry(async () => sheet.getRows(), 'scheduleFollowUp-fetch');
+
+    const row = rows.find(r =>
+      r.get('Lead_ID') === leadId ||
+      r.get('Enquiry_Code') === leadId
+    );
+
+    if (!row) {
+      return { success: false, error: 'Lead not found in Leads Master' };
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const notes = `[${today}] ${followUpData.follow_up_type || 'Call'}: ${followUpData.notes || ''}`;
+    const nextDate = followUpData.follow_up_date;
+
+    // Find first empty slot (1-5)
+    let slotIndex = 1;
+    for (let i = 1; i <= 5; i++) {
+      const dateVal = row.get(`Follow_Up_${i}_Date`);
+      if (!dateVal) {
+        slotIndex = i;
+        break;
+      }
+      // Optional: If all full, overwrite the last one or shift (here we just use 5 if full)
+      if (i === 5) slotIndex = 5;
+    }
+
+    // Update the specific slot
+    row.set(`Follow_Up_${slotIndex}_Date`, nextDate);
+    row.set(`Follow_Up_${slotIndex}_Notes`, notes);
+
+    // ALSO update the main follow-up fields for the list view badge
+    row.set('Follow_Up_Date', nextDate);
+    row.set('Follow_Up_Remarks', notes);
+    row.set('Updated_At', new Date().toISOString());
+
+    await this.withRetry(async () => row.save(), 'scheduleFollowUp-save');
+    this.cache.leads.data = null; // Invalidate cache
+
+    return {
+      success: true,
+      message: `Scheduled follow-up in slot ${slotIndex}`,
+      slot: slotIndex
+    };
   }
 
   /**

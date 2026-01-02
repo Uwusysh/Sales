@@ -317,7 +317,10 @@ export default function LeadsPage() {
 
         try {
             setIsDetailLoading(true);
-            await scheduleFollowUp(selectedLead.id, {
+            // Use lead_id or enquiry_code or id, whichever is the stable identifier
+            const targetId = selectedLead.lead_id || selectedLead.enquiry_code || selectedLead.id;
+
+            await scheduleFollowUp(targetId, {
                 follow_up_date: followUpForm.date,
                 follow_up_time: followUpForm.time,
                 notes: followUpForm.notes,

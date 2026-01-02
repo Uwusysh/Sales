@@ -673,12 +673,15 @@ router.post('/:id/followup', async (req, res, next) => {
     const authenticatedAgent = req.user.agentName;
 
     const service = getEnhancedSheetsService();
-    const lead = await service.getLeadById(id);
 
-    if (!lead) {
-      return res.status(404).json({ success: false, error: 'Lead not found' });
+    // Use the new method to schedule in the main sheet
+    const result = await service.scheduleFollowUpInLeads(id, followUpData);
+
+    if (!result.success) {
+      return res.status(404).json(result);
     }
 
+<<<<<<< Updated upstream
     // 🔒 SECURITY: Verify ownership before creating followup
     const leadOwner = String(lead.lead_owner || '').trim();
     if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
@@ -703,10 +706,18 @@ router.post('/:id/followup', async (req, res, next) => {
     });
 
     leadsCache.data = null;
+=======
+    // Optionally, we can still add to the daily log if needed, but the user requirement
+    // focused on the sequential columns in Leads Master. 
+    // For completeness, we'll keep the Daily Log entry if it was there, 
+    // OR just rely on the new system as requested. The user said:
+    // "Server now saves to sequential columns instead of separate sheet"
+    // So we will prioritize the new method.
+>>>>>>> Stashed changes
 
     res.json({
       success: true,
-      message: 'Follow-up scheduled',
+      message: 'Follow-up scheduled successfully',
       data: result
     });
   } catch (error) {
