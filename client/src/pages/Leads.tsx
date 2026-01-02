@@ -14,6 +14,7 @@ import {
 } from '../lib/api';
 import { useNavigate } from '../hooks/useNavigate';
 import { AddLeadModal } from '../components/leads/AddLeadModal';
+import { EmailComposeModal } from '../components/leads/EmailComposeModal';
 import { VoiceInput } from '../components/ui/VoiceInput';
 
 // Status color mapping with enhanced styling
@@ -140,6 +141,7 @@ export default function LeadsPage() {
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(false);
     const [showAddLeadModal, setShowAddLeadModal] = useState(false);
+    const [showEmailModal, setShowEmailModal] = useState(false);
 
     // Detail View State
     const [isDetailLoading, setIsDetailLoading] = useState(false);
@@ -417,7 +419,7 @@ export default function LeadsPage() {
                 {STATUS_BUCKETS.map(status => {
                     const isActive = statusFilter === status;
                     // For 'all' bucket: admins see total, agents see their own count (myLeads)
-                    const count = status === 'all' 
+                    const count = status === 'all'
                         ? (isAdmin && viewMode === 'all' ? stats?.totalLeads : stats?.myLeads)
                         : statusCounts[status];
                     return (
@@ -792,12 +794,12 @@ export default function LeadsPage() {
                                     </div>
                                     <div>
                                         <p className="text-muted-foreground text-xs">Email</p>
-                                        <a
-                                            href={`mailto:${selectedLead.client_email}`}
-                                            className="font-medium truncate block hover:text-primary"
+                                        <button
+                                            onClick={() => setShowEmailModal(true)}
+                                            className="font-medium truncate block hover:text-primary hover:underline text-left w-full"
                                         >
                                             {selectedLead.client_email || '-'}
-                                        </a>
+                                        </button>
                                     </div>
                                     <div>
                                         <p className="text-muted-foreground text-xs">Location</p>
@@ -1105,6 +1107,19 @@ export default function LeadsPage() {
                     </div>
                 </div>
             )}
-        </AppLayout>
+
+            {/* Email Compose Modal */}
+            {
+                selectedLead && (
+                    <EmailComposeModal
+                        isOpen={showEmailModal}
+                        onClose={() => setShowEmailModal(false)}
+                        clientName={selectedLead.client_company || selectedLead.client_person || 'Client'}
+                        clientEmail={selectedLead.client_email}
+                        leadProduct={selectedLead.product || 'Product'}
+                    />
+                )
+            }
+        </AppLayout >
     );
 }
