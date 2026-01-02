@@ -351,17 +351,37 @@ router.get('/check-duplicate', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
+<<<<<<< Updated upstream
+=======
+    const authenticatedAgent = req.user.agentName;
+    const userRole = req.user.role;
+    const isAdmin = userRole === 'admin';
+>>>>>>> Stashed changes
     const service = getEnhancedSheetsService();
+    
+    console.log(`📋 Fetching lead by ID: "${id}" for user "${authenticatedAgent}"`);
     const lead = await service.getLeadById(id);
 
     if (!lead) {
+      console.log(`❌ Lead not found with ID: "${id}"`);
       return res.status(404).json({ success: false, error: 'Lead not found' });
     }
 
-    // Get related data (SRF, Quotations, FollowForups)
+    // 🔒 SECURITY: Check ownership (admin can view all)
+    const leadOwner = String(lead.lead_owner || '').trim().toLowerCase();
+    if (!isAdmin && leadOwner !== authenticatedAgent.toLowerCase()) {
+      console.warn(`🚫 Unauthorized access: ${authenticatedAgent} tried to view ${lead.lead_owner}'s lead`);
+      return res.status(403).json({ 
+        success: false, 
+        error: 'Forbidden: You can only view your own leads' 
+      });
+    }
+
+    // Get related data (SRF, Quotations, FollowUps)
+    const leadIdForLookup = lead.lead_id || lead.enquiry_code;
     const [quotations, followups] = await Promise.all([
-      service.getQuotations(lead.lead_id || lead.enquiry_code),
-      service.getFollowUps(lead.lead_id || lead.enquiry_code)
+      service.getQuotations(leadIdForLookup),
+      service.getFollowUps(leadIdForLookup)
     ]);
 
     res.json({
@@ -373,6 +393,7 @@ router.get('/:id', async (req, res, next) => {
       }
     });
   } catch (error) {
+    console.error('❌ Error fetching lead:', error);
     next(error);
   }
 });

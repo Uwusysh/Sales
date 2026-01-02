@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AgentContext';
 import { AppLayout } from '../components/layout/AppLayout';
 import {
@@ -7,7 +7,7 @@ import {
     MessageSquare, Mail, Video, X
 } from 'lucide-react';
 import {
-    fetchActiveFollowUps, completeFollowUp, FollowUp,
+    fetchActiveFollowUps, completeFollowUp, FollowUp, ApiError,
     fetchLeadById, Lead
 } from '../lib/api';
 
@@ -48,8 +48,15 @@ export default function FollowUpsPage() {
         nextDate: ''
     });
     const [viewMode, setViewMode] = useState<'my' | 'all'>('my');
+    const [completingId, setCompletingId] = useState<string | null>(null);
+
+    // Ref to track if we should stop polling (after auth error)
+    const shouldPollRef = useRef(true);
 
     const loadFollowUps = useCallback(async () => {
+        // Don't fetch if we've had an auth error
+        if (!shouldPollRef.current) return;
+        
         try {
             setLoading(true);
             setError(null);
@@ -60,6 +67,11 @@ export default function FollowUpsPage() {
             setFollowUps(response.data);
             setCounts(response.counts);
         } catch (err) {
+            // Stop polling on auth errors to prevent retry loops
+            if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+                shouldPollRef.current = false;
+                return; // Auth handler will redirect to login
+            }
             setError(err instanceof Error ? err.message : 'Failed to load follow-ups');
         } finally {
             setLoading(false);
@@ -70,9 +82,13 @@ export default function FollowUpsPage() {
         loadFollowUps();
     }, [loadFollowUps]);
 
-    // Auto-refresh every 60 seconds
+    // Auto-refresh every 60 seconds (only if not auth error)
     useEffect(() => {
-        const interval = setInterval(loadFollowUps, 60000);
+        const interval = setInterval(() => {
+            if (shouldPollRef.current) {
+                loadFollowUps();
+            }
+        }, 60000);
         return () => clearInterval(interval);
     }, [loadFollowUps]);
 

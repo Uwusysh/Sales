@@ -1,88 +1,94 @@
-const TOKEN_KEY = 'auth_token';
-const USER_KEY = 'auth_user';
+/**
+ * Authentication Service
+ *
+ * Uses the centralized apiClient for all auth operations.
+ * Token management is handled by apiClient.
+ */
+
+import {
+  login as apiLogin,
+  logout as apiLogout,
+  getToken,
+  getStoredUser,
+  clearAuthData,
+  isAuthenticated as checkAuth
+} from './apiClient';
+
+// Test users that should be blocked
+const TEST_USERNAMES = ['agent.smith', 'agent.jones', 'admin', 'test', 'demo'];
 
 export interface User {
-  username: string
-  agentName: string
-  role: string
+  username: string;
+  agentName: string;
+  role: string;
 }
-
-export interface LoginResponse {
-  success: boolean
-  data?: {
-    token: string
-    user: User
-  }
-  error?: string
-}
-
-const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5000/api';
 
 export const authService = {
+  /**
+   * Login with username and password
+   */
   async login(username: string, password: string): Promise<User> {
-    const response = await fetch(`${API_BASE}/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ username, password })
-    });
-
-    const data: LoginResponse = await response.json();
-
-    if (!response.ok || !data.success || !data.data) {
-      throw new Error(data.error || 'Login failed');
+    // Block test users
+    if (TEST_USERNAMES.includes(username.toLowerCase())) {
+      throw new Error('Test accounts are no longer available. Please use your Lead_Owner credentials.');
     }
 
-    // Store token and user
-    localStorage.setItem(TOKEN_KEY, data.data.token);
-    localStorage.setItem(USER_KEY, JSON.stringify(data.data.user));
-
-    return data.data.user;
+    return apiLogin(username, password);
   },
 
+  /**
+   * Logout and clear all auth data
+   */
   async logout(): Promise<void> {
-    const token = this.getToken();
-    
-    if (token) {
-      try {
-        await fetch(`${API_BASE}/auth/logout`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-      } catch (error) {
-        console.error('Logout error:', error);
-      }
-    }
-
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    return apiLogout();
   },
 
+  /**
+   * Get current token
+   */
   getToken(): string | null {
-    return localStorage.getItem(TOKEN_KEY);
+    return getToken();
   },
 
+  /**
+   * Get current user from localStorage
+   */
   getUser(): User | null {
-    const userStr = localStorage.getItem(USER_KEY);
-    if (!userStr) return null;
-    
-    try {
-      return JSON.parse(userStr);
-    } catch {
+    const user = getStoredUser();
+
+    if (!user) return null;
+
+    // Auto-logout test users that somehow got stored
+    if (TEST_USERNAMES.includes(user.username.toLowerCase())) {
+      console.warn('⚠️ Test user detected in storage. Forcing logout...');
+      clearAuthData();
       return null;
     }
+
+    return user;
   },
 
+  /**
+   * Clear all auth data
+   */
+  clearStorage(): void {
+    clearAuthData();
+  },
+
+  /**
+   * Check if user is authenticated
+   */
   isAuthenticated(): boolean {
-    return !!this.getToken() && !!this.getUser();
+    return checkAuth();
   },
 
-  getAuthHeader(): { Authorization: string } | {} {
-    const token = this.getToken();
+  /**
+   * Get auth header for manual requests (rarely needed)
+   */
+  getAuthHeader(): { Authorization: string } | Record<string, never> {
+    const token = getToken();
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 };
 
+export default authService;

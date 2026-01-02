@@ -660,10 +660,17 @@ export class EnhancedSheetsService {
 
   /**
    * Get lead by ID
+   * Handles Lead_ID, Enquiry_Code, or row number (as string or number)
    */
   async getLeadById(leadId) {
     const leads = await this.getLeads();
-    return leads.find(l => l.lead_id === leadId || l.enquiry_code === leadId || l.id === leadId);
+    const searchId = String(leadId);
+    return leads.find(l => 
+      l.lead_id === searchId || 
+      l.enquiry_code === searchId || 
+      String(l.id) === searchId ||
+      String(l._rowNumber) === searchId
+    );
   }
 
   // ============ SRF OPERATIONS ============

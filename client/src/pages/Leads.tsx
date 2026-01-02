@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AgentContext';
 import { AppLayout } from '../components/layout/AppLayout';
 import {
@@ -10,7 +10,7 @@ import {
 import {
     fetchLeads, fetchLeadStats, refreshLeadsCache, updateLeadStatus,
     Lead, FetchLeadsOptions, formatValue, getRelativeTime,
-    fetchLeadById, scheduleFollowUp
+    fetchLeadById, scheduleFollowUp, ApiError
 } from '../lib/api';
 import { AddLeadModal } from '../components/leads/AddLeadModal';
 
@@ -148,6 +148,9 @@ export default function LeadsPage() {
 
     const { user } = useAuth();
     const [viewMode, setViewMode] = useState<'all' | 'my'>('my');
+    
+    // Ref to track if we should stop polling (after auth error)
+    const shouldPollRef = useRef(true);
 
     // Debounce search
     useEffect(() => {
@@ -161,6 +164,9 @@ export default function LeadsPage() {
     }, [statusFilter, ownerFilter, locationFilter, debouncedSearch, sortBy, sortOrder, viewMode]);
 
     const loadLeads = useCallback(async () => {
+        // Don't fetch if we've had an auth error
+        if (!shouldPollRef.current) return;
+        
         try {
             setLoading(true);
             setError(null);
@@ -190,6 +196,11 @@ export default function LeadsPage() {
             setStatusCounts(leadsRes.meta.statusCounts);
             setStats(statsRes.data);
         } catch (err) {
+            // Stop polling on auth errors to prevent retry loops
+            if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+                shouldPollRef.current = false;
+                return; // Auth handler will redirect to login
+            }
             setError(err instanceof Error ? err.message : 'Failed to load leads');
         } finally {
             setLoading(false);
@@ -200,9 +211,13 @@ export default function LeadsPage() {
         loadLeads();
     }, [loadLeads]);
 
-    // Auto-refresh every 30 seconds
+    // Auto-refresh every 30 seconds (only if not auth error)
     useEffect(() => {
-        const interval = setInterval(loadLeads, 30000);
+        const interval = setInterval(() => {
+            if (shouldPollRef.current) {
+                loadLeads();
+            }
+        }, 30000);
         return () => clearInterval(interval);
     }, [loadLeads]);
 
