@@ -28,9 +28,8 @@ const getFollowUpIcons = (type: string) => {
     if (normalizedType.includes('email')) icons.push(<Mail key="email" className="w-4 h-4" />);
     if (normalizedType.includes('meeting')) icons.push(<Video key="meeting" className="w-4 h-4" />);
     if (normalizedType.includes('site visit')) icons.push(<MapPin key="site" className="w-4 h-4" />);
-    if (normalizedType.includes('follow-up')) icons.push(<RefreshCw key="follow-up" className="w-4 h-4" />);
     
-    if (icons.length === 0 && normalizedType.length > 0) icons.push(<Phone key="default" className="w-4 h-4" />);
+    if (icons.length === 0) icons.push(<Phone key="default" className="w-4 h-4" />);
     
     return (
         <div className="flex items-center gap-1.5">

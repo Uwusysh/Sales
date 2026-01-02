@@ -309,8 +309,7 @@ export async function scheduleFollowUp(leadId: string, followUp: Partial<FollowU
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to schedule follow-up');
+    throw new Error('Failed to schedule follow-up');
   }
 
   return response.json();
