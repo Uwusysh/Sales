@@ -12,6 +12,16 @@ function getAuthHeaders(): HeadersInit {
 
 // ============ TYPES ============
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 export interface Lead {
   id: string;
   lead_id: string;
@@ -42,6 +52,17 @@ export interface Lead {
   sales_owner: string;
   follow_up_date: string;
   follow_up_remarks: string;
+  // Follow-up timeline slots (1-5)
+  follow_up_1_date: string;
+  follow_up_1_notes: string;
+  follow_up_2_date: string;
+  follow_up_2_notes: string;
+  follow_up_3_date: string;
+  follow_up_3_notes: string;
+  follow_up_4_date: string;
+  follow_up_4_notes: string;
+  follow_up_5_date: string;
+  follow_up_5_notes: string;
   srf_completion_pct: string;
   srf_pdf_link: string;
   quotation_link: string;
@@ -168,7 +189,7 @@ export async function fetchLeads(params?: FetchLeadsOptions): Promise<LeadsRespo
   });
 
   if (!response.ok) {
-    throw new Error('Failed to fetch leads');
+    throw new ApiError('Failed to fetch leads', response.status);
   }
 
   return response.json();
@@ -183,7 +204,7 @@ export async function fetchLeadStats(): Promise<StatsResponse> {
   });
 
   if (!response.ok) {
-    throw new Error('Failed to fetch stats');
+    throw new ApiError('Failed to fetch stats', response.status);
   }
 
   return response.json();
@@ -191,14 +212,20 @@ export async function fetchLeadStats(): Promise<StatsResponse> {
 
 /**
  * Fetch single lead by ID with related data
+ * @param id - Lead ID
+ * @param forceRefresh - If true, bypass cache and fetch fresh data
  */
-export async function fetchLeadById(id: string): Promise<{ success: boolean; data: Lead }> {
-  const response = await fetch(`${API_BASE}/leads/${id}`, {
+export async function fetchLeadById(id: string, forceRefresh = false): Promise<{ success: boolean; data: Lead }> {
+  const url = forceRefresh
+    ? `${API_BASE}/leads/${id}?refresh=true`
+    : `${API_BASE}/leads/${id}`;
+
+  const response = await fetch(url, {
     headers: getAuthHeaders()
   });
 
   if (!response.ok) {
-    throw new Error('Lead not found');
+    throw new ApiError('Lead not found', response.status);
   }
 
   return response.json();
@@ -217,7 +244,7 @@ export async function checkDuplicate(phone?: string, company?: string): Promise<
   });
 
   if (!response.ok) {
-    throw new Error('Duplicate check failed');
+    throw new ApiError('Duplicate check failed', response.status);
   }
 
   return response.json();
@@ -241,7 +268,7 @@ export async function createLead(leadData: Partial<Lead>): Promise<{ success: bo
   }
 
   if (!response.ok) {
-    throw new Error(data.error || 'Failed to create lead');
+    throw new ApiError(data.error || 'Failed to create lead', response.status);
   }
 
   return data;
@@ -258,7 +285,7 @@ export async function forceCreateLead(leadData: Partial<Lead>, linkToPrevious?: 
   });
 
   if (!response.ok) {
-    throw new Error('Failed to create lead');
+    throw new ApiError('Failed to create lead', response.status);
   }
 
   return response.json();
@@ -275,7 +302,7 @@ export async function updateLead(id: string, updates: Partial<Lead>): Promise<{ 
   });
 
   if (!response.ok) {
-    throw new Error('Failed to update lead');
+    throw new ApiError('Failed to update lead', response.status);
   }
 
   return response.json();
@@ -292,7 +319,7 @@ export async function updateLeadStatus(id: string, status: string, remarks?: str
   });
 
   if (!response.ok) {
-    throw new Error('Failed to update status');
+    throw new ApiError('Failed to update status', response.status);
   }
 
   return response.json();
@@ -309,7 +336,7 @@ export async function scheduleFollowUp(leadId: string, followUp: Partial<FollowU
   });
 
   if (!response.ok) {
-    throw new Error('Failed to schedule follow-up');
+    throw new ApiError('Failed to schedule follow-up', response.status);
   }
 
   return response.json();
@@ -327,7 +354,7 @@ export async function fetchTodayFollowUps(owner?: string): Promise<{ success: bo
   });
 
   if (!response.ok) {
-    throw new Error('Failed to fetch follow-ups');
+    throw new ApiError('Failed to fetch follow-ups', response.status);
   }
 
   return response.json();
@@ -345,7 +372,7 @@ export async function fetchOverdueFollowUps(owner?: string): Promise<{ success: 
   });
 
   if (!response.ok) {
-    throw new Error('Failed to fetch overdue follow-ups');
+    throw new ApiError('Failed to fetch overdue follow-ups', response.status);
   }
 
   return response.json();
@@ -377,7 +404,7 @@ export async function fetchActiveFollowUps(owner?: string): Promise<{
   });
 
   if (!response.ok) {
-    throw new Error('Failed to fetch active follow-ups');
+    throw new ApiError('Failed to fetch active follow-ups', response.status);
   }
 
   return response.json();
@@ -407,7 +434,7 @@ export async function completeFollowUp(
 
   if (!response.ok) {
     const data = await response.json();
-    throw new Error(data.error || 'Failed to complete follow-up');
+    throw new ApiError(data.error || 'Failed to complete follow-up', response.status);
   }
 
   return response.json();
@@ -432,7 +459,7 @@ export async function getSyncStatus(): Promise<{ success: boolean; data: SyncSta
   });
 
   if (!response.ok) {
-    throw new Error('Failed to get sync status');
+    throw new ApiError('Failed to get sync status', response.status);
   }
 
   return response.json();

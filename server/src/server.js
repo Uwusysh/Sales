@@ -7,7 +7,7 @@ import cookieParser from 'cookie-parser';
 import { authenticateToken } from './middleware/auth.js';
 import authRouter from './routes/auth.js';
 import leadsRouter from './routes/leads.js';
-// import followUpRouter from './routes/followUp.js';
+import followUpRouter from './routes/followUp.js';
 import srfRouter from './routes/srf.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -27,7 +27,7 @@ app.use(cookieParser());
 // API Routes
 app.use('/api/auth', authRouter);
 app.use('/api/leads', authenticateToken, leadsRouter); // Protected route
-// app.use('/api/follow-up', followUpRouter);
+app.use('/api/follow-up', followUpRouter);
 app.use('/api/srf', authenticateToken, srfRouter); // Protected route
 
 // Health check

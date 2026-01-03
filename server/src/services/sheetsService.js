@@ -449,6 +449,23 @@ export class EnhancedSheetsService {
           });
         }, `freeze ${title}`);
       }
+    } else if (sheet && SHEET_CONFIG[title]) {
+      // Sync headers: Ensure new columns (like Follow_Up_X) exist
+      await this.withRetry(async () => {
+        await sheet.loadHeaderRow();
+        const currentHeaders = sheet.headerValues;
+        const configHeaders = SHEET_CONFIG[title].headers;
+
+        // Find headers present in config but missing in sheet
+        const missing = configHeaders.filter(h => !currentHeaders.includes(h));
+
+        if (missing.length > 0) {
+          console.log(`⚠️ Found ${missing.length} missing headers in "${title}". Appending...`);
+          // Append missing headers to the end to preserve valid data mapping
+          const newHeaders = [...currentHeaders, ...missing];
+          await sheet.setHeaderRow(newHeaders);
+        }
+      }, `sync headers ${title}`);
     }
 
     return sheet;
@@ -489,7 +506,22 @@ export class EnhancedSheetsService {
       return await sheet.getRows();
     }, 'getLeads');
 
-    cache.data = rows.map(row => this.rowToLeadObject(row));
+    cache.data = rows.map(row => {
+      try {
+        return this.rowToLeadObject(row);
+      } catch (error) {
+        console.error(`Error mapping row ${row.rowNumber}:`, error.message);
+        // Return a minimal lead object to prevent complete failure
+        return {
+          id: row.rowNumber,
+          lead_id: row.get('Lead_ID') || `ROW_${row.rowNumber}`,
+          enquiry_code: row.get('Enquiry_Code') || '',
+          status: 'Error',
+          _rowNumber: row.rowNumber,
+          _error: error.message
+        };
+      }
+    }).filter(lead => !lead._error); // Filter out error rows
     cache.lastFetch = now;
 
     // Initialize Lead ID sequence
@@ -503,6 +535,15 @@ export class EnhancedSheetsService {
    * Convert sheet row to lead object
    */
   rowToLeadObject(row) {
+    // Helper to safely get column values
+    const safeGet = (columnName) => {
+      try {
+        return row.get(columnName) || '';
+      } catch (e) {
+        return '';
+      }
+    };
+
     return {
       id: row.get('Lead_ID') || row.get('Enquiry_Code') || row.rowNumber,
       lead_id: row.get('Lead_ID'),
@@ -533,16 +574,16 @@ export class EnhancedSheetsService {
       sales_owner: row.get('Sales_Owner'),
       follow_up_date: row.get('Follow_Up_Date'),
       follow_up_remarks: row.get('Follow_Up_Remarks'),
-      follow_up_1_date: row.get('Follow_Up_1_Date'),
-      follow_up_1_notes: row.get('Follow_Up_1_Notes'),
-      follow_up_2_date: row.get('Follow_Up_2_Date'),
-      follow_up_2_notes: row.get('Follow_Up_2_Notes'),
-      follow_up_3_date: row.get('Follow_Up_3_Date'),
-      follow_up_3_notes: row.get('Follow_Up_3_Notes'),
-      follow_up_4_date: row.get('Follow_Up_4_Date'),
-      follow_up_4_notes: row.get('Follow_Up_4_Notes'),
-      follow_up_5_date: row.get('Follow_Up_5_Date'),
-      follow_up_5_notes: row.get('Follow_Up_5_Notes'),
+      follow_up_1_date: safeGet('Follow_Up_1_Date'),
+      follow_up_1_notes: safeGet('Follow_Up_1_Notes'),
+      follow_up_2_date: safeGet('Follow_Up_2_Date'),
+      follow_up_2_notes: safeGet('Follow_Up_2_Notes'),
+      follow_up_3_date: safeGet('Follow_Up_3_Date'),
+      follow_up_3_notes: safeGet('Follow_Up_3_Notes'),
+      follow_up_4_date: safeGet('Follow_Up_4_Date'),
+      follow_up_4_notes: safeGet('Follow_Up_4_Notes'),
+      follow_up_5_date: safeGet('Follow_Up_5_Date'),
+      follow_up_5_notes: safeGet('Follow_Up_5_Notes'),
       srf_completion_pct: row.get('SRF_Completion_Pct'),
       srf_pdf_link: row.get('SRF_PDF_Link'),
       quotation_link: row.get('Quotation_Link'),
@@ -680,10 +721,32 @@ export class EnhancedSheetsService {
 
   /**
    * Get lead by ID
+   * @param {string} leadId - The lead ID to search for
+   * @param {boolean} forceRefresh - If true, bypass cache and fetch fresh data
    */
-  async getLeadById(leadId) {
-    const leads = await this.getLeads();
-    return leads.find(l => l.lead_id === leadId || l.enquiry_code === leadId || l.id === leadId);
+  async getLeadById(leadId, forceRefresh = false) {
+    const leads = await this.getLeads(forceRefresh);
+    // Use loose equality (==) to handle string/number mismatch for row-based IDs
+    const lead = leads.find(l =>
+      l.lead_id == leadId ||
+      l.enquiry_code == leadId ||
+      l.id == leadId
+    );
+
+    if (lead) {
+      console.log(`📅 Follow-up data for lead ${leadId} (row ${lead._rowNumber}):`);
+      for (let i = 1; i <= 5; i++) {
+        const dateField = `follow_up_${i}_date`;
+        const notesField = `follow_up_${i}_notes`;
+        const date = lead[dateField] || '';
+        const notes = lead[notesField] || '';
+        if (date || notes) {
+          console.log(`   Slot ${i}: Date="${date}", Notes="${notes}"`);
+        }
+      }
+    }
+
+    return lead;
   }
 
   // ============ SRF OPERATIONS ============
@@ -794,33 +857,46 @@ export class EnhancedSheetsService {
     const rows = await this.withRetry(async () => sheet.getRows(), 'scheduleFollowUp-fetch');
 
     const row = rows.find(r =>
-      r.get('Lead_ID') === leadId ||
-      r.get('Enquiry_Code') === leadId
+      (r.get('Lead_ID') && r.get('Lead_ID') == leadId) ||
+      (r.get('Enquiry_Code') && r.get('Enquiry_Code') == leadId) ||
+      // Fallback: Check row number if leadId looks like a number
+      r.rowNumber == leadId
     );
 
     if (!row) {
-      return { success: false, error: 'Lead not found in Leads Master' };
+      return { success: false, error: `Lead not found in Leads Master (searched for ${leadId})` };
     }
+
+    console.log(`🔍 Looking for empty follow-up slot for row ${row.rowNumber}...`);
 
     const today = new Date().toISOString().split('T')[0];
     const notes = `[${today}] ${followUpData.follow_up_type || 'Call'}: ${followUpData.notes || ''}`;
     const nextDate = followUpData.follow_up_date;
 
-    // Find first empty slot (1-5)
+    // Find first empty slot (1-5) - properly check for empty/whitespace values
     let slotIndex = 1;
     for (let i = 1; i <= 5; i++) {
       const dateVal = row.get(`Follow_Up_${i}_Date`);
-      if (!dateVal) {
+      // Check if truly empty (null, undefined, empty string, or just whitespace)
+      const isEmpty = !dateVal || String(dateVal).trim() === '';
+      console.log(`   Slot ${i}: Follow_Up_${i}_Date = "${dateVal}" (isEmpty: ${isEmpty})`);
+      if (isEmpty) {
         slotIndex = i;
+        console.log(`✅ Found empty slot: ${i}`);
         break;
       }
-      // Optional: If all full, overwrite the last one or shift (here we just use 5 if full)
-      if (i === 5) slotIndex = 5;
+      // If all slots are full, use slot 5 (will overwrite the last one)
+      if (i === 5) {
+        slotIndex = 5;
+        console.log(`⚠️ All slots full, overwriting slot 5`);
+      }
     }
 
     // Update the specific slot
     row.set(`Follow_Up_${slotIndex}_Date`, nextDate);
     row.set(`Follow_Up_${slotIndex}_Notes`, notes);
+
+    console.log(`📝 Saving to: Follow_Up_${slotIndex}_Date = "${nextDate}", Follow_Up_${slotIndex}_Notes = "${notes}"`);
 
     // ALSO update the main follow-up fields for the list view badge
     row.set('Follow_Up_Date', nextDate);
@@ -829,6 +905,8 @@ export class EnhancedSheetsService {
 
     await this.withRetry(async () => row.save(), 'scheduleFollowUp-save');
     this.cache.leads.data = null; // Invalidate cache
+
+    console.log(`✅ Follow-up saved successfully to row ${row.rowNumber}, slot ${slotIndex}`);
 
     return {
       success: true,
@@ -931,12 +1009,13 @@ export class EnhancedSheetsService {
   async getLeadsWithTodayFollowUp(agentName) {
     const leads = await this.getLeads();
     const today = new Date().toISOString().split('T')[0];
-    
+
     return leads
       .filter(lead => {
         const leadOwner = String(lead.lead_owner || '').trim().toLowerCase();
         const followUpDate = lead.follow_up_date;
-        return leadOwner === agentName.toLowerCase() && followUpDate === today;
+        const safeAgentName = (agentName || '').toLowerCase();
+        return leadOwner === safeAgentName && followUpDate === today;
       })
       .map(lead => ({
         lead_id: lead.lead_id || lead.enquiry_code,
@@ -965,17 +1044,18 @@ export class EnhancedSheetsService {
   async getLeadsWithOverdueFollowUp(agentName) {
     const leads = await this.getLeads();
     const today = new Date().toISOString().split('T')[0];
-    
+
     return leads
       .filter(lead => {
         const leadOwner = String(lead.lead_owner || '').trim().toLowerCase();
         const followUpDate = lead.follow_up_date;
-        return leadOwner === agentName.toLowerCase() && 
-               followUpDate && 
-               followUpDate < today &&
-               lead.status !== 'PO RCVD' && 
-               lead.status !== 'Lost' &&
-               lead.status !== 'Closed';
+        const safeAgentName = (agentName || '').toLowerCase();
+        return leadOwner === safeAgentName &&
+          followUpDate &&
+          followUpDate < today &&
+          lead.status !== 'PO RCVD' &&
+          lead.status !== 'Lost' &&
+          lead.status !== 'Closed';
       })
       .map(lead => ({
         lead_id: lead.lead_id || lead.enquiry_code,
@@ -1008,17 +1088,18 @@ export class EnhancedSheetsService {
     ]);
 
     const today = new Date().toISOString().split('T')[0];
-    
+
     // Get follow-ups from Leads Master
     const leadsFollowups = leads
       .filter(lead => {
         const leadOwner = String(lead.lead_owner || '').trim().toLowerCase();
         const followUpDate = lead.follow_up_date;
-        return leadOwner === agentName.toLowerCase() && 
-               followUpDate &&
-               lead.status !== 'PO RCVD' && 
-               lead.status !== 'Lost' &&
-               lead.status !== 'Closed';
+        const safeAgentName = (agentName || '').toLowerCase();
+        return leadOwner === safeAgentName &&
+          followUpDate &&
+          lead.status !== 'PO RCVD' &&
+          lead.status !== 'Lost' &&
+          lead.status !== 'Closed';
       })
       .map(lead => ({
         lead_id: lead.lead_id || lead.enquiry_code,
@@ -1044,7 +1125,7 @@ export class EnhancedSheetsService {
     // Combine and deduplicate (prefer DB entries over Leads Master)
     const allFollowups = [...dbFollowups, ...leadsFollowups];
     const uniqueMap = new Map();
-    
+
     allFollowups.forEach(f => {
       const key = f.lead_id;
       if (!uniqueMap.has(key) || f.source !== 'leads_master') {
@@ -1087,7 +1168,7 @@ export class EnhancedSheetsService {
         // Mark as completed with timestamp
         row.set('Completed', 'Yes');
         row.set('Status_After', outcome || 'Completed');
-        
+
         // Add completion note with timestamp
         const existingNotes = row.get('Notes') || '';
         const completionNote = `\n[COMPLETED ${new Date().toLocaleString('en-IN')}] ${outcome || 'Marked as done'}`;
@@ -1104,7 +1185,7 @@ export class EnhancedSheetsService {
     // Always update Leads Master - clear or set new follow-up date
     const leadSheet = await this.getOrCreateSheet('Leads Master');
     const leadRows = await this.withRetry(async () => leadSheet.getRows(), 'completeFollowUp-leadFetch');
-    
+
     const leadRow = leadRows.find(r =>
       r.get('Lead_ID') === leadId || r.get('Enquiry_Code') === leadId
     );
@@ -1114,7 +1195,7 @@ export class EnhancedSheetsService {
       if (nextFollowUpDate) {
         leadRow.set('Follow_Up_Date', nextFollowUpDate);
         leadRow.set('Follow_Up_Remarks', `Next [${nextFollowUpType}]: ${outcome || 'Follow-up scheduled'}`);
-        
+
         // Also create a NEW entry in Daily Follow-up DB for the future follow-up
         try {
           await this.createFollowUp({
@@ -1137,7 +1218,7 @@ export class EnhancedSheetsService {
         leadRow.set('Follow_Up_Remarks', `[${new Date().toLocaleDateString('en-IN')}] ${outcome || 'Completed'}`);
       }
       leadRow.set('Updated_At', completionTimestamp);
-      
+
       // Append to remarks for tracking
       const existingRemarks = leadRow.get('Remarks') || '';
       const completionRemark = ` | F/U Done: ${new Date().toLocaleDateString('en-IN')} - ${outcome || 'Completed'}`;
@@ -1155,14 +1236,14 @@ export class EnhancedSheetsService {
     this.cache.leads.data = null;
 
     // Log sync action
-    await this.logSync('UPDATE', 'FollowUp', leadId, 
+    await this.logSync('UPDATE', 'FollowUp', leadId,
       { follow_up_date: followUpDate, completed: 'No' },
       { completed: 'Yes', completion_timestamp: completionTimestamp, next_follow_up: nextFollowUpDate, next_type: nextFollowUpType },
       'Dashboard'
     );
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       message: 'Follow-up marked as completed',
       completedAt: completionTimestamp,
       nextFollowUpDate: nextFollowUpDate || null

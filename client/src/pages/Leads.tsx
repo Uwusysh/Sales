@@ -86,7 +86,7 @@ const FollowUpBadge: React.FC<{ lead: Lead }> = ({ lead }) => {
 
     // Find the most relevant follow-up (next upcoming or most overdue)
     const relevantFollowUp = sortedDates.find(fu => fu.date >= today) || // Next upcoming
-                           sortedDates[sortedDates.length - 1]; // Most recent if all past
+        sortedDates[sortedDates.length - 1]; // Most recent if all past
 
     if (!relevantFollowUp) return null;
 
@@ -180,7 +180,7 @@ export default function LeadsPage() {
     const { user } = useAuth();
     const navigate = useNavigate();
     const [viewMode, setViewMode] = useState<'all' | 'my'>('my');
-    
+
     // Ref to track if we should stop polling (after auth error)
     const shouldPollRef = useRef(true);
 
@@ -198,7 +198,7 @@ export default function LeadsPage() {
     const loadLeads = useCallback(async () => {
         // Don't fetch if we've had an auth error
         if (!shouldPollRef.current) return;
-        
+
         try {
             setLoading(true);
             setError(null);
@@ -320,6 +320,7 @@ export default function LeadsPage() {
             // Use lead_id or enquiry_code or id, whichever is the stable identifier
             const targetId = selectedLead.lead_id || selectedLead.enquiry_code || selectedLead.id;
 
+            console.log('Scheduling follow-up for lead:', targetId);
             await scheduleFollowUp(targetId, {
                 follow_up_date: followUpForm.date,
                 follow_up_time: followUpForm.time,
@@ -328,9 +329,21 @@ export default function LeadsPage() {
                 sales_owner: user?.agentName || selectedLead.lead_owner
             });
 
-            // Refresh details
-            const res = await fetchLeadById(selectedLead.id);
+            console.log('Follow-up saved, refreshing lead data...');
+
+            // Small delay to ensure backend has saved the data
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Refresh details using the same identifier with force refresh
+            const res = await fetchLeadById(targetId, true);
             setSelectedLead(res.data);
+            console.log('Lead data refreshed, new follow-ups:', {
+                slot1: res.data.follow_up_1_date,
+                slot2: res.data.follow_up_2_date,
+                slot3: res.data.follow_up_3_date,
+                slot4: res.data.follow_up_4_date,
+                slot5: res.data.follow_up_5_date
+            });
 
             // Reset form
             setShowFollowUpForm(false);
@@ -340,6 +353,7 @@ export default function LeadsPage() {
             loadLeads();
         } catch (err) {
             console.error('Failed to schedule follow-up:', err);
+            alert('Failed to schedule follow-up. Please try again.');
         } finally {
             setIsDetailLoading(false);
         }
@@ -1076,10 +1090,9 @@ export default function LeadsPage() {
                                                     <div className="relative border-l border-primary/20 ml-2 space-y-6 pl-4 pb-2">
                                                         {followUps.map((fu, idx) => (
                                                             <div key={idx} className="relative">
-                                                                <div className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-background ${
-                                                                    fu.isCompleted ? 'bg-green-500' :
+                                                                <div className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-background ${fu.isCompleted ? 'bg-green-500' :
                                                                     new Date(fu.date) < new Date() ? 'bg-red-500' : 'bg-primary'
-                                                                }`} />
+                                                                    }`} />
                                                                 <div className="flex flex-col gap-1">
                                                                     <div className="flex items-center gap-2 text-xs">
                                                                         <span className="font-semibold text-foreground">

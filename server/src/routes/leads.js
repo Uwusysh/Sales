@@ -38,10 +38,10 @@ router.get('/', async (req, res, next) => {
     const now = Date.now();
 
     // Get authenticated user from JWT token
-    const authenticatedAgent = req.user.agentName;
+    const authenticatedAgent = req.user.agentName || '';
     const userRole = req.user.role;
     const isAdmin = userRole === 'admin';
-    
+
     console.log(`🔒 User "${authenticatedAgent}" (${userRole}) accessing leads`);
 
     // Get leads with caching
@@ -209,37 +209,83 @@ router.get('/', async (req, res, next) => {
  */
 router.get('/stats', async (req, res, next) => {
   try {
-    const authenticatedAgent = req.user.agentName;
-    const userRole = req.user.role;
+    // Validate authentication
+    if (!req.user || !req.user.agentName) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
+    const authenticatedAgent = req.user.agentName || '';
+    const userRole = req.user.role || 'agent';
     const isAdmin = userRole === 'admin';
     const service = getEnhancedSheetsService();
-    
-    // Get all leads
-    const allLeads = await service.getLeads();
-    
-    // Filter leads for agent
-    const agentLeads = allLeads.filter(l => 
-      String(l.lead_owner || '').trim().toLowerCase() === authenticatedAgent.toLowerCase()
-    );
 
-    // Calculate stats from agent's leads
+    console.log(`📊 Stats requested by: ${authenticatedAgent} (${userRole})`);
+
+    // Get all leads with error handling
+    let allLeads = [];
+    try {
+      allLeads = await service.getLeads();
+      console.log(`✅ Fetched ${allLeads.length} leads`);
+    } catch (fetchError) {
+      console.error('❌ Error fetching leads:', fetchError.message);
+      // Return empty stats instead of crashing
+      return res.json({
+        success: true,
+        data: {
+          totalLeads: 0,
+          myLeads: 0,
+          newLeads: 0,
+          working: 0,
+          sql: 0,
+          won: 0,
+          lost: 0,
+          followUpDue: 0,
+          isAdmin: isAdmin,
+          error: 'Could not fetch leads data'
+        }
+      });
+    }
+
+    // Ensure allLeads is an array
+    if (!Array.isArray(allLeads)) {
+      allLeads = [];
+    }
+
+    // Filter leads for agent with safe string comparison
+    const agentLeads = allLeads.filter(l => {
+      try {
+        const leadOwner = String(l?.lead_owner || '').trim().toLowerCase();
+        return leadOwner === authenticatedAgent.toLowerCase();
+      } catch (e) {
+        return false;
+      }
+    });
+
+    // Calculate stats from agent's leads with safe access
     const today = new Date().toISOString().split('T')[0];
     const stats = {
       // For admin: show total database count, for agent: show their own count
       totalLeads: isAdmin ? allLeads.length : agentLeads.length,
       myLeads: agentLeads.length,
-      newLeads: agentLeads.filter(l => l.status === 'New').length,
-      working: agentLeads.filter(l => l.status === 'Working').length,
-      sql: agentLeads.filter(l => l.status === 'SQL').length,
-      won: agentLeads.filter(l => l.status === 'PO RCVD').length,
-      lost: agentLeads.filter(l => l.status === 'Lost').length,
-      followUpDue: agentLeads.filter(l => 
-        l.follow_up_date && 
-        l.follow_up_date <= today && 
-        l.status !== 'PO RCVD' && 
-        l.status !== 'Lost' &&
-        l.status !== 'Closed'
-      ).length,
+      newLeads: agentLeads.filter(l => l?.status === 'New').length,
+      working: agentLeads.filter(l => l?.status === 'Working').length,
+      sql: agentLeads.filter(l => l?.status === 'SQL').length,
+      won: agentLeads.filter(l => l?.status === 'PO RCVD').length,
+      lost: agentLeads.filter(l => l?.status === 'Lost').length,
+      followUpDue: agentLeads.filter(l => {
+        try {
+          return l?.follow_up_date &&
+            l.follow_up_date <= today &&
+            l.status !== 'PO RCVD' &&
+            l.status !== 'Lost' &&
+            l.status !== 'Closed';
+        } catch (e) {
+          return false;
+        }
+      }).length,
       isAdmin: isAdmin
     };
 
@@ -248,6 +294,7 @@ router.get('/stats', async (req, res, next) => {
       data: stats
     });
   } catch (error) {
+    console.error('❌ Stats route error:', error);
     next(error);
   }
 });
@@ -259,21 +306,21 @@ router.get('/stats', async (req, res, next) => {
  */
 router.get('/followups/today', async (req, res, next) => {
   try {
-    const authenticatedAgent = req.user.agentName;
+    const authenticatedAgent = req.user.agentName || '';
     const service = getEnhancedSheetsService();
-    
+
     // Get follow-ups from both Daily Follow-up DB and Leads Master
     const [dbFollowups, leadsFollowups] = await Promise.all([
       service.getTodayFollowUps(),
       service.getLeadsWithTodayFollowUp(authenticatedAgent)
     ]);
-    
+
     // Filter DB followups by agent's leads
-    const agentDbFollowups = dbFollowups.filter(f => 
+    const agentDbFollowups = dbFollowups.filter(f =>
       f.sales_owner?.toLowerCase() === authenticatedAgent.toLowerCase() ||
       f.lead_owner?.toLowerCase() === authenticatedAgent.toLowerCase()
     );
-    
+
     // Combine and deduplicate
     const allFollowups = [...agentDbFollowups, ...leadsFollowups];
     const uniqueFollowups = Array.from(
@@ -297,21 +344,21 @@ router.get('/followups/today', async (req, res, next) => {
  */
 router.get('/followups/overdue', async (req, res, next) => {
   try {
-    const authenticatedAgent = req.user.agentName;
+    const authenticatedAgent = req.user.agentName || '';
     const service = getEnhancedSheetsService();
-    
+
     // Get overdue from both sources
     const [dbOverdue, leadsOverdue] = await Promise.all([
       service.getOverdueFollowUps(),
       service.getLeadsWithOverdueFollowUp(authenticatedAgent)
     ]);
-    
+
     // Filter by authenticated agent
-    const agentDbOverdue = dbOverdue.filter(f => 
+    const agentDbOverdue = dbOverdue.filter(f =>
       f.sales_owner?.toLowerCase() === authenticatedAgent.toLowerCase() ||
       f.lead_owner?.toLowerCase() === authenticatedAgent.toLowerCase()
     );
-    
+
     // Combine and deduplicate
     const allOverdue = [...agentDbOverdue, ...leadsOverdue];
     const uniqueOverdue = Array.from(
@@ -335,9 +382,9 @@ router.get('/followups/overdue', async (req, res, next) => {
  */
 router.get('/followups/active', async (req, res, next) => {
   try {
-    const authenticatedAgent = req.user.agentName;
+    const authenticatedAgent = req.user.agentName || '';
     const service = getEnhancedSheetsService();
-    
+
     // Get all active follow-ups for this agent from both sources
     const followups = await service.getAllActiveFollowUpsForAgent(authenticatedAgent);
 
@@ -437,13 +484,23 @@ router.get('/check-duplicate', async (req, res, next) => {
  * GET /api/leads/:id
  * Get single lead details
  * PROTECTED: Only returns if lead belongs to authenticated agent
+ * Query params:
+ *   - refresh: Set to 'true' to force fetch fresh data from sheets
  */
 router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const authenticatedAgent = req.user.agentName;
+    const { refresh } = req.query;
+    const authenticatedAgent = req.user.agentName || '';
     const service = getEnhancedSheetsService();
-    const lead = await service.getLeadById(id);
+
+    // Force refresh if requested
+    const forceRefresh = refresh === 'true';
+    if (forceRefresh) {
+      console.log(`🔄 Force refreshing lead ${id} from Google Sheets`);
+    }
+
+    const lead = await service.getLeadById(id, forceRefresh);
 
     if (!lead) {
       return res.status(404).json({ success: false, error: 'Lead not found' });
@@ -574,10 +631,10 @@ router.patch('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const updates = req.body;
-    const authenticatedAgent = req.user.agentName;
+    const authenticatedAgent = req.user.agentName || '';
 
     const service = getEnhancedSheetsService();
-    
+
     // 🔒 SECURITY: Verify ownership before update
     const lead = await service.getLeadById(id);
     if (!lead) {
@@ -587,9 +644,9 @@ router.patch('/:id', async (req, res, next) => {
     const leadOwner = String(lead.lead_owner || '').trim();
     if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
       console.warn(`🚫 Unauthorized update attempt: ${authenticatedAgent} tried to update ${leadOwner}'s lead ${id}`);
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Forbidden: You can only update your own leads' 
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You can only update your own leads'
       });
     }
 
@@ -617,14 +674,14 @@ router.patch('/:id/status', async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status, remarks } = req.body;
-    const authenticatedAgent = req.user.agentName;
+    const authenticatedAgent = req.user.agentName || '';
 
     if (!status) {
       return res.status(400).json({ success: false, error: 'Status is required' });
     }
 
     const service = getEnhancedSheetsService();
-    
+
     // 🔒 SECURITY: Verify ownership before update
     const lead = await service.getLeadById(id);
     if (!lead) {
@@ -634,9 +691,9 @@ router.patch('/:id/status', async (req, res, next) => {
     const leadOwner = String(lead.lead_owner || '').trim();
     if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
       console.warn(`🚫 Unauthorized status update: ${authenticatedAgent} tried to update ${leadOwner}'s lead ${id}`);
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Forbidden: You can only update your own leads' 
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You can only update your own leads'
       });
     }
 
@@ -670,7 +727,7 @@ router.post('/:id/followup', async (req, res, next) => {
   try {
     const { id } = req.params;
     const followUpData = req.body;
-    const authenticatedAgent = req.user.agentName;
+    const authenticatedAgent = req.user.agentName || '';
 
     const service = getEnhancedSheetsService();
 
@@ -680,40 +737,6 @@ router.post('/:id/followup', async (req, res, next) => {
     if (!result.success) {
       return res.status(404).json(result);
     }
-
-<<<<<<< Updated upstream
-    // 🔒 SECURITY: Verify ownership before creating followup
-    const leadOwner = String(lead.lead_owner || '').trim();
-    if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
-      console.warn(`🚫 Unauthorized followup creation: ${authenticatedAgent} tried to create followup for ${leadOwner}'s lead ${id}`);
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Forbidden: You can only manage followups for your own leads' 
-      });
-    }
-
-    // Create follow-up entry
-    const result = await service.createFollowUp({
-      lead_id: lead.lead_id || lead.enquiry_code,
-      client_name: lead.client_person || lead.client_company,
-      client_number: lead.client_number,
-      ...followUpData
-    });
-
-    // Update lead's follow-up date
-    await service.updateLead(id, {
-      Follow_Up_Date: followUpData.follow_up_date
-    });
-
-    leadsCache.data = null;
-=======
-    // Optionally, we can still add to the daily log if needed, but the user requirement
-    // focused on the sequential columns in Leads Master. 
-    // For completeness, we'll keep the Daily Log entry if it was there, 
-    // OR just rely on the new system as requested. The user said:
-    // "Server now saves to sequential columns instead of separate sheet"
-    // So we will prioritize the new method.
->>>>>>> Stashed changes
 
     res.json({
       success: true,
