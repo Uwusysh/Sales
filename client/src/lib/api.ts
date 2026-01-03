@@ -12,6 +12,13 @@ function getAuthHeaders(): HeadersInit {
 
 // ============ TYPES ============
 
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 export interface Lead {
   id: string;
   lead_id: string;
@@ -168,7 +175,7 @@ export async function fetchLeads(params?: FetchLeadsOptions): Promise<LeadsRespo
   });
 
   if (!response.ok) {
-    throw new Error('Failed to fetch leads');
+    throw new ApiError('Failed to fetch leads', response.status);
   }
 
   return response.json();
@@ -183,7 +190,7 @@ export async function fetchLeadStats(): Promise<StatsResponse> {
   });
 
   if (!response.ok) {
-    throw new Error('Failed to fetch stats');
+    throw new ApiError('Failed to fetch stats', response.status);
   }
 
   return response.json();
@@ -198,7 +205,7 @@ export async function fetchLeadById(id: string): Promise<{ success: boolean; dat
   });
 
   if (!response.ok) {
-    throw new Error('Lead not found');
+    throw new ApiError('Lead not found', response.status);
   }
 
   return response.json();
@@ -217,7 +224,7 @@ export async function checkDuplicate(phone?: string, company?: string): Promise<
   });
 
   if (!response.ok) {
-    throw new Error('Duplicate check failed');
+    throw new ApiError('Duplicate check failed', response.status);
   }
 
   return response.json();
@@ -241,7 +248,7 @@ export async function createLead(leadData: Partial<Lead>): Promise<{ success: bo
   }
 
   if (!response.ok) {
-    throw new Error(data.error || 'Failed to create lead');
+    throw new ApiError(data.error || 'Failed to create lead', response.status);
   }
 
   return data;
@@ -258,7 +265,7 @@ export async function forceCreateLead(leadData: Partial<Lead>, linkToPrevious?: 
   });
 
   if (!response.ok) {
-    throw new Error('Failed to create lead');
+    throw new ApiError('Failed to create lead', response.status);
   }
 
   return response.json();
@@ -275,7 +282,7 @@ export async function updateLead(id: string, updates: Partial<Lead>): Promise<{ 
   });
 
   if (!response.ok) {
-    throw new Error('Failed to update lead');
+    throw new ApiError('Failed to update lead', response.status);
   }
 
   return response.json();
@@ -292,7 +299,7 @@ export async function updateLeadStatus(id: string, status: string, remarks?: str
   });
 
   if (!response.ok) {
-    throw new Error('Failed to update status');
+    throw new ApiError('Failed to update status', response.status);
   }
 
   return response.json();
@@ -309,7 +316,7 @@ export async function scheduleFollowUp(leadId: string, followUp: Partial<FollowU
   });
 
   if (!response.ok) {
-    throw new Error('Failed to schedule follow-up');
+    throw new ApiError('Failed to schedule follow-up', response.status);
   }
 
   return response.json();
@@ -327,7 +334,7 @@ export async function fetchTodayFollowUps(owner?: string): Promise<{ success: bo
   });
 
   if (!response.ok) {
-    throw new Error('Failed to fetch follow-ups');
+    throw new ApiError('Failed to fetch follow-ups', response.status);
   }
 
   return response.json();
@@ -345,7 +352,7 @@ export async function fetchOverdueFollowUps(owner?: string): Promise<{ success: 
   });
 
   if (!response.ok) {
-    throw new Error('Failed to fetch overdue follow-ups');
+    throw new ApiError('Failed to fetch overdue follow-ups', response.status);
   }
 
   return response.json();
@@ -377,7 +384,7 @@ export async function fetchActiveFollowUps(owner?: string): Promise<{
   });
 
   if (!response.ok) {
-    throw new Error('Failed to fetch active follow-ups');
+    throw new ApiError('Failed to fetch active follow-ups', response.status);
   }
 
   return response.json();
@@ -407,7 +414,7 @@ export async function completeFollowUp(
 
   if (!response.ok) {
     const data = await response.json();
-    throw new Error(data.error || 'Failed to complete follow-up');
+    throw new ApiError(data.error || 'Failed to complete follow-up', response.status);
   }
 
   return response.json();
@@ -432,7 +439,7 @@ export async function getSyncStatus(): Promise<{ success: boolean; data: SyncSta
   });
 
   if (!response.ok) {
-    throw new Error('Failed to get sync status');
+    throw new ApiError('Failed to get sync status', response.status);
   }
 
   return response.json();

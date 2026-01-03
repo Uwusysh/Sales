@@ -860,7 +860,7 @@ export class EnhancedSheetsService {
   async getLeadsWithTodayFollowUp(agentName) {
     const leads = await this.getLeads();
     const today = new Date().toISOString().split('T')[0];
-    
+
     return leads
       .filter(lead => {
         const leadOwner = String(lead.lead_owner || '').trim().toLowerCase();
@@ -894,17 +894,17 @@ export class EnhancedSheetsService {
   async getLeadsWithOverdueFollowUp(agentName) {
     const leads = await this.getLeads();
     const today = new Date().toISOString().split('T')[0];
-    
+
     return leads
       .filter(lead => {
         const leadOwner = String(lead.lead_owner || '').trim().toLowerCase();
         const followUpDate = lead.follow_up_date;
-        return leadOwner === agentName.toLowerCase() && 
-               followUpDate && 
-               followUpDate < today &&
-               lead.status !== 'PO RCVD' && 
-               lead.status !== 'Lost' &&
-               lead.status !== 'Closed';
+        return leadOwner === agentName.toLowerCase() &&
+          followUpDate &&
+          followUpDate < today &&
+          lead.status !== 'PO RCVD' &&
+          lead.status !== 'Lost' &&
+          lead.status !== 'Closed';
       })
       .map(lead => ({
         lead_id: lead.lead_id || lead.enquiry_code,
@@ -937,17 +937,17 @@ export class EnhancedSheetsService {
     ]);
 
     const today = new Date().toISOString().split('T')[0];
-    
+
     // Get follow-ups from Leads Master
     const leadsFollowups = leads
       .filter(lead => {
         const leadOwner = String(lead.lead_owner || '').trim().toLowerCase();
         const followUpDate = lead.follow_up_date;
-        return leadOwner === agentName.toLowerCase() && 
-               followUpDate &&
-               lead.status !== 'PO RCVD' && 
-               lead.status !== 'Lost' &&
-               lead.status !== 'Closed';
+        return leadOwner === agentName.toLowerCase() &&
+          followUpDate &&
+          lead.status !== 'PO RCVD' &&
+          lead.status !== 'Lost' &&
+          lead.status !== 'Closed';
       })
       .map(lead => ({
         lead_id: lead.lead_id || lead.enquiry_code,
@@ -973,7 +973,7 @@ export class EnhancedSheetsService {
     // Combine and deduplicate (prefer DB entries over Leads Master)
     const allFollowups = [...dbFollowups, ...leadsFollowups];
     const uniqueMap = new Map();
-    
+
     allFollowups.forEach(f => {
       const key = f.lead_id;
       if (!uniqueMap.has(key) || f.source !== 'leads_master') {
@@ -1016,7 +1016,7 @@ export class EnhancedSheetsService {
         // Mark as completed with timestamp
         row.set('Completed', 'Yes');
         row.set('Status_After', outcome || 'Completed');
-        
+
         // Add completion note with timestamp
         const existingNotes = row.get('Notes') || '';
         const completionNote = `\n[COMPLETED ${new Date().toLocaleString('en-IN')}] ${outcome || 'Marked as done'}`;
@@ -1033,7 +1033,7 @@ export class EnhancedSheetsService {
     // Always update Leads Master - clear or set new follow-up date
     const leadSheet = await this.getOrCreateSheet('Leads Master');
     const leadRows = await this.withRetry(async () => leadSheet.getRows(), 'completeFollowUp-leadFetch');
-    
+
     const leadRow = leadRows.find(r =>
       r.get('Lead_ID') === leadId || r.get('Enquiry_Code') === leadId
     );
@@ -1043,7 +1043,7 @@ export class EnhancedSheetsService {
       if (nextFollowUpDate) {
         leadRow.set('Follow_Up_Date', nextFollowUpDate);
         leadRow.set('Follow_Up_Remarks', `Next [${nextFollowUpType}]: ${outcome || 'Follow-up scheduled'}`);
-        
+
         // Also create a NEW entry in Daily Follow-up DB for the future follow-up
         try {
           await this.createFollowUp({
@@ -1066,7 +1066,7 @@ export class EnhancedSheetsService {
         leadRow.set('Follow_Up_Remarks', `[${new Date().toLocaleDateString('en-IN')}] ${outcome || 'Completed'}`);
       }
       leadRow.set('Updated_At', completionTimestamp);
-      
+
       // Append to remarks for tracking
       const existingRemarks = leadRow.get('Remarks') || '';
       const completionRemark = ` | F/U Done: ${new Date().toLocaleDateString('en-IN')} - ${outcome || 'Completed'}`;
@@ -1084,14 +1084,14 @@ export class EnhancedSheetsService {
     this.cache.leads.data = null;
 
     // Log sync action
-    await this.logSync('UPDATE', 'FollowUp', leadId, 
+    await this.logSync('UPDATE', 'FollowUp', leadId,
       { follow_up_date: followUpDate, completed: 'No' },
       { completed: 'Yes', completion_timestamp: completionTimestamp, next_follow_up: nextFollowUpDate, next_type: nextFollowUpType },
       'Dashboard'
     );
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       message: 'Follow-up marked as completed',
       completedAt: completionTimestamp,
       nextFollowUpDate: nextFollowUpDate || null

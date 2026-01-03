@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AgentContext';
 import { AppLayout } from '../components/layout/AppLayout';
 import {
@@ -10,11 +10,10 @@ import {
 import {
     fetchLeads, fetchLeadStats, refreshLeadsCache,
     Lead, FetchLeadsOptions, formatValue, getRelativeTime,
-    fetchLeadById, scheduleFollowUp, ApiError
+    fetchLeadById, scheduleFollowUp
 } from '../lib/api';
 import { useNavigate } from '../hooks/useNavigate';
 import { AddLeadModal } from '../components/leads/AddLeadModal';
-import { EmailComposeModal } from '../components/leads/EmailComposeModal';
 import { VoiceInput } from '../components/ui/VoiceInput';
 
 // Status color mapping with enhanced styling
@@ -63,34 +62,10 @@ const SRFProgress: React.FC<{ percentage: string }> = ({ percentage }) => {
 };
 
 // Follow-up Badge Component
-const FollowUpBadge: React.FC<{ lead: Lead }> = ({ lead }) => {
-    // Check all follow-up columns for the next upcoming or overdue date
-    const followUpDates = [];
-    for (let i = 1; i <= 5; i++) {
-        const dateField = `follow_up_${i}_date` as keyof Lead;
-        const date = lead[dateField] as string;
-        if (date) {
-            followUpDates.push({
-                date,
-                slot: i,
-                notes: lead[`follow_up_${i}_notes` as keyof Lead] as string
-            });
-        }
-    }
+const FollowUpBadge: React.FC<{ date: string }> = ({ date }) => {
+    if (!date) return null;
 
-    // Sort by date and find the most relevant one (next upcoming or most overdue)
     const today = new Date().toISOString().split('T')[0];
-    const sortedDates = followUpDates
-        .filter(fu => fu.date) // Only dates that exist
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    // Find the most relevant follow-up (next upcoming or most overdue)
-    const relevantFollowUp = sortedDates.find(fu => fu.date >= today) || // Next upcoming
-                           sortedDates[sortedDates.length - 1]; // Most recent if all past
-
-    if (!relevantFollowUp) return null;
-
-    const { date } = relevantFollowUp;
     const isToday = date === today;
     const isPast = date < today;
     const isTomorrow = (() => {
@@ -165,7 +140,6 @@ export default function LeadsPage() {
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(false);
     const [showAddLeadModal, setShowAddLeadModal] = useState(false);
-    const [showEmailModal, setShowEmailModal] = useState(false);
 
     // Detail View State
     const [isDetailLoading, setIsDetailLoading] = useState(false);
@@ -180,9 +154,6 @@ export default function LeadsPage() {
     const { user } = useAuth();
     const navigate = useNavigate();
     const [viewMode, setViewMode] = useState<'all' | 'my'>('my');
-    
-    // Ref to track if we should stop polling (after auth error)
-    const shouldPollRef = useRef(true);
 
     // Debounce search
     useEffect(() => {
@@ -196,9 +167,6 @@ export default function LeadsPage() {
     }, [statusFilter, ownerFilter, locationFilter, debouncedSearch, sortBy, sortOrder, viewMode]);
 
     const loadLeads = useCallback(async () => {
-        // Don't fetch if we've had an auth error
-        if (!shouldPollRef.current) return;
-        
         try {
             setLoading(true);
             setError(null);
@@ -233,11 +201,6 @@ export default function LeadsPage() {
             setHasMore(leadsRes.meta.hasMore);
             setStatusCounts(leadsRes.meta.statusCounts);
         } catch (err) {
-            // Stop polling on auth errors to prevent retry loops
-            if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-                shouldPollRef.current = false;
-                return; // Auth handler will redirect to login
-            }
             setError(err instanceof Error ? err.message : 'Failed to load leads');
         } finally {
             setLoading(false);
@@ -248,13 +211,9 @@ export default function LeadsPage() {
         loadLeads();
     }, [loadLeads]);
 
-    // Auto-refresh every 30 seconds (only if not auth error)
+    // Auto-refresh every 30 seconds
     useEffect(() => {
-        const interval = setInterval(() => {
-            if (shouldPollRef.current) {
-                loadLeads();
-            }
-        }, 30000);
+        const interval = setInterval(loadLeads, 30000);
         return () => clearInterval(interval);
     }, [loadLeads]);
 
@@ -302,7 +261,8 @@ export default function LeadsPage() {
             // We can detect if it's "fresh" from the list by checking if followups is undefined
             if (!selectedLead.followups) {
                 setIsDetailLoading(true);
-                fetchLeadById(selectedLead.id)
+                const leadIdentifier = selectedLead.lead_id || selectedLead.enquiry_code || selectedLead.id;
+                fetchLeadById(leadIdentifier)
                     .then(res => {
                         setSelectedLead(prev => prev ? { ...prev, ...res.data } : res.data);
                     })
@@ -317,7 +277,21 @@ export default function LeadsPage() {
 
         try {
             setIsDetailLoading(true);
-            await scheduleFollowUp(selectedLead.id, {
+
+            // Debug: Log the lead object to see what fields are available
+            console.log('Selected Lead:', {
+                id: selectedLead.id,
+                lead_id: selectedLead.lead_id,
+                enquiry_code: selectedLead.enquiry_code,
+                client_company: selectedLead.client_company,
+                client_person: selectedLead.client_person
+            });
+
+            // Use lead_id or enquiry_code as the correct identifier
+            const leadIdentifier = selectedLead.lead_id || selectedLead.enquiry_code || selectedLead.id;
+            console.log('Using lead identifier:', leadIdentifier);
+
+            await scheduleFollowUp(leadIdentifier, {
                 follow_up_date: followUpForm.date,
                 follow_up_time: followUpForm.time,
                 notes: followUpForm.notes,
@@ -325,8 +299,8 @@ export default function LeadsPage() {
                 sales_owner: user?.agentName || selectedLead.lead_owner
             });
 
-            // Refresh details
-            const res = await fetchLeadById(selectedLead.id);
+            // Refresh details to show the new follow-up
+            const res = await fetchLeadById(leadIdentifier);
             setSelectedLead(res.data);
 
             // Reset form
@@ -337,6 +311,8 @@ export default function LeadsPage() {
             loadLeads();
         } catch (err) {
             console.error('Failed to schedule follow-up:', err);
+            const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+            alert(`Failed to schedule follow-up: ${errorMsg}\n\nPlease check the console for details.`);
         } finally {
             setIsDetailLoading(false);
         }
@@ -727,7 +703,7 @@ export default function LeadsPage() {
 
                             {/* Follow-up */}
                             <div className="col-span-1 hidden md:block">
-                                <FollowUpBadge lead={lead} />
+                                <FollowUpBadge date={lead.follow_up_date} />
                             </div>
 
                             {/* Owner */}
@@ -833,12 +809,12 @@ export default function LeadsPage() {
                                     </div>
                                     <div>
                                         <p className="text-muted-foreground text-xs">Email</p>
-                                        <button
-                                            onClick={() => setShowEmailModal(true)}
-                                            className="font-medium truncate block hover:text-primary hover:underline text-left w-full"
+                                        <a
+                                            href={`mailto:${selectedLead.client_email}`}
+                                            className="font-medium truncate block hover:text-primary"
                                         >
                                             {selectedLead.client_email || '-'}
-                                        </button>
+                                        </a>
                                     </div>
                                     <div>
                                         <p className="text-muted-foreground text-xs">Location</p>
@@ -896,7 +872,7 @@ export default function LeadsPage() {
                                         <p className="text-muted-foreground text-xs">Follow-up Date</p>
                                         <div className="flex items-center gap-2">
                                             <p className="font-medium">{selectedLead.follow_up_date || '-'}</p>
-                                            <FollowUpBadge lead={selectedLead} />
+                                            <FollowUpBadge date={selectedLead.follow_up_date} />
                                         </div>
                                     </div>
                                     <div>
@@ -1050,69 +1026,46 @@ export default function LeadsPage() {
                                         </div>
                                     ) : (
                                         <>
-                                            {/* Display follow-ups from all columns */}
-                                            {(() => {
-                                                const followUps = [];
-                                                for (let i = 1; i <= 5; i++) {
-                                                    const dateField = `follow_up_${i}_date` as keyof Lead;
-                                                    const notesField = `follow_up_${i}_notes` as keyof Lead;
-                                                    const date = selectedLead[dateField] as string;
-                                                    const notes = selectedLead[notesField] as string;
-
-                                                    if (date) {
-                                                        followUps.push({
-                                                            date,
-                                                            notes: notes || '',
-                                                            slot: i,
-                                                            isCompleted: notes?.includes('[COMPLETED]')
-                                                        });
-                                                    }
-                                                }
-
-                                                return followUps.length > 0 ? (
-                                                    <div className="relative border-l border-primary/20 ml-2 space-y-6 pl-4 pb-2">
-                                                        {followUps.map((fu, idx) => (
-                                                            <div key={idx} className="relative">
-                                                                <div className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-background ${
-                                                                    fu.isCompleted ? 'bg-green-500' :
-                                                                    new Date(fu.date) < new Date() ? 'bg-red-500' : 'bg-primary'
+                                            {selectedLead.followups && selectedLead.followups.length > 0 ? (
+                                                <div className="relative border-l border-primary/20 ml-2 space-y-6 pl-4 pb-2">
+                                                    {selectedLead.followups.map((fu) => (
+                                                        <div key={`${fu.follow_up_date}-${fu._rowNumber || Math.random()}`} className="relative">
+                                                            <div className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-background ${fu.completed === 'Yes' ? 'bg-green-500' :
+                                                                new Date(fu.follow_up_date) < new Date() ? 'bg-red-500' : 'bg-primary'
                                                                 }`} />
-                                                                <div className="flex flex-col gap-1">
-                                                                    <div className="flex items-center gap-2 text-xs">
-                                                                        <span className="font-semibold text-foreground">
-                                                                            {new Date(fu.date).toLocaleDateString('en-IN', {
-                                                                                day: 'numeric', month: 'short', year: 'numeric'
-                                                                            })}
-                                                                        </span>
-                                                                        <span className="bg-secondary px-1.5 rounded text-[10px] text-muted-foreground">
-                                                                            Follow-up #{fu.slot}
-                                                                        </span>
-                                                                        {fu.isCompleted && (
-                                                                            <span className="bg-green-100 text-green-700 px-1.5 rounded text-[10px] font-medium">
-                                                                                Completed
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    {fu.notes && (
-                                                                        <p className="text-sm text-muted-foreground bg-background/50 p-2 rounded border border-border/50 whitespace-pre-wrap">
-                                                                            {fu.notes}
-                                                                        </p>
+                                                            <div className="flex flex-col gap-1">
+                                                                <div className="flex items-center gap-2 text-xs">
+                                                                    <span className="font-semibold text-foreground">
+                                                                        {new Date(fu.follow_up_date).toLocaleDateString('en-IN', {
+                                                                            day: 'numeric', month: 'short', year: 'numeric'
+                                                                        })}
+                                                                    </span>
+                                                                    <span className="bg-secondary px-1.5 rounded text-[10px] text-muted-foreground">
+                                                                        {fu.follow_up_type}
+                                                                    </span>
+                                                                    {fu.sales_owner && (
+                                                                        <span className="text-muted-foreground text-[10px]">by {fu.sales_owner}</span>
                                                                     )}
                                                                 </div>
+                                                                {fu.notes && (
+                                                                    <p className="text-sm text-muted-foreground bg-background/50 p-2 rounded border border-border/50">
+                                                                        {fu.notes}
+                                                                    </p>
+                                                                )}
                                                             </div>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    <div className="text-center py-4 text-xs text-muted-foreground">
-                                                        No follow-ups scheduled.
-                                                    </div>
-                                                );
-                                            })()}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="text-center py-4 text-xs text-muted-foreground">
+                                                    No history found.
+                                                </div>
+                                            )}
                                         </>
                                     )}
 
                                     {/* Legacy Remarks Fallback */}
-                                    {selectedLead.remarks && (
+                                    {selectedLead.remarks && (!selectedLead.followups || selectedLead.followups.length === 0) && (
                                         <div className="mt-4 pt-4 border-t border-border">
                                             <p className="text-xs font-semibold text-muted-foreground mb-1">Legacy Remarks</p>
                                             <p className="text-sm text-foreground whitespace-pre-wrap bg-background p-2 rounded border border-border">
@@ -1169,19 +1122,6 @@ export default function LeadsPage() {
                     </div>
                 </div>
             )}
-
-            {/* Email Compose Modal */}
-            {
-                selectedLead && (
-                    <EmailComposeModal
-                        isOpen={showEmailModal}
-                        onClose={() => setShowEmailModal(false)}
-                        clientName={selectedLead.client_company || selectedLead.client_person || 'Client'}
-                        clientEmail={selectedLead.client_email}
-                        leadProduct={selectedLead.product || 'Product'}
-                    />
-                )
-            }
-        </AppLayout >
+        </AppLayout>
     );
 }
