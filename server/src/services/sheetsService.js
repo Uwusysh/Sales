@@ -748,26 +748,83 @@ export class EnhancedSheetsService {
   }
 
   async getFollowUps(leadId) {
-    const sheet = await this.getOrCreateSheet('Daily Follow-up DB');
-    const rows = await this.withRetry(async () => sheet.getRows(), 'getFollowUps');
+    const followUpsFromDB = [];
+    const followUpsFromLeads = [];
 
-    return rows
-      .filter(row => row.get('Lead_ID') === leadId)
-      .map(row => ({
-        lead_id: row.get('Lead_ID'),
-        follow_up_date: row.get('Follow_Up_Date'),
-        follow_up_time: row.get('Follow_Up_Time'),
-        sales_owner: row.get('Sales_Owner'),
-        client_name: row.get('Client_Name'),
-        client_number: row.get('Client_Number'),
-        follow_up_type: row.get('Follow_Up_Type'),
-        priority: row.get('Priority'),
-        notes: row.get('Notes'),
-        completed: row.get('Completed'),
-        created_at: row.get('Created_At'),
-        _rowNumber: row.rowNumber
-      }))
-      .sort((a, b) => new Date(b.follow_up_date) - new Date(a.follow_up_date)); // Sort by date desc
+    // Get follow-ups from Daily Follow-up DB
+    try {
+      const sheet = await this.getOrCreateSheet('Daily Follow-up DB');
+      const rows = await this.withRetry(async () => sheet.getRows(), 'getFollowUps-DB');
+
+      const dbFollowUps = rows
+        .filter(row => row.get('Lead_ID') === leadId)
+        .map(row => ({
+          lead_id: row.get('Lead_ID'),
+          follow_up_date: row.get('Follow_Up_Date'),
+          follow_up_time: row.get('Follow_Up_Time'),
+          sales_owner: row.get('Sales_Owner'),
+          client_name: row.get('Client_Name'),
+          client_number: row.get('Client_Number'),
+          follow_up_type: row.get('Follow_Up_Type'),
+          priority: row.get('Priority'),
+          notes: row.get('Notes'),
+          completed: row.get('Completed'),
+          created_at: row.get('Created_At'),
+          source: 'db',
+          _rowNumber: row.rowNumber
+        }));
+
+      followUpsFromDB.push(...dbFollowUps);
+    } catch (err) {
+      console.warn('Failed to get follow-ups from DB:', err.message);
+    }
+
+    // Get follow-ups from Leads Master sequential columns
+    try {
+      const lead = await this.getLeadById(leadId);
+      if (lead) {
+        for (let i = 1; i <= 5; i++) {
+          const dateField = `follow_up_${i}_date`;
+          const notesField = `follow_up_${i}_notes`;
+          const date = lead[dateField];
+          const notes = lead[notesField];
+
+          if (date) {
+            followUpsFromLeads.push({
+              lead_id: leadId,
+              follow_up_date: date,
+              follow_up_time: '',
+              sales_owner: lead.lead_owner,
+              client_name: lead.client_person || lead.client_company,
+              client_number: lead.client_number,
+              follow_up_type: 'Follow-up',
+              priority: 'Medium',
+              notes: notes || '',
+              completed: 'No',
+              created_at: '',
+              source: 'leads_master',
+              slot: i
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to get follow-ups from Leads Master:', err.message);
+    }
+
+    // Combine and deduplicate (prefer DB entries)
+    const allFollowUps = [...followUpsFromDB, ...followUpsFromLeads];
+    const uniqueMap = new Map();
+
+    allFollowUps.forEach(f => {
+      const key = `${f.lead_id}_${f.follow_up_date}`;
+      if (!uniqueMap.has(key) || f.source === 'db') {
+        uniqueMap.set(key, f);
+      }
+    });
+
+    return Array.from(uniqueMap.values())
+      .sort((a, b) => new Date(b.follow_up_date) - new Date(a.follow_up_date));
   }
 
   async createFollowUp(followUpData) {

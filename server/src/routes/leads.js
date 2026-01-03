@@ -337,9 +337,13 @@ router.get('/followups/active', async (req, res, next) => {
   try {
     const authenticatedAgent = req.user.agentName;
     const service = getEnhancedSheetsService();
-    
+
+    console.log(`📋 Fetching active follow-ups for agent: ${authenticatedAgent}`);
+
     // Get all active follow-ups for this agent from both sources
     const followups = await service.getAllActiveFollowUpsForAgent(authenticatedAgent);
+
+    console.log(`✅ Found ${followups.length} active follow-ups`);
 
     // Categorize for dashboard
     const categorized = {
@@ -348,6 +352,8 @@ router.get('/followups/active', async (req, res, next) => {
       upcoming: followups.filter(f => !f.is_overdue && !f.is_today),
       all: followups
     };
+
+    console.log(`📊 Categorized: Overdue=${categorized.overdue.length}, Today=${categorized.today.length}, Upcoming=${categorized.upcoming.length}`);
 
     res.json({
       success: true,
@@ -360,6 +366,7 @@ router.get('/followups/active', async (req, res, next) => {
       }
     });
   } catch (error) {
+    console.error('❌ Error fetching active follow-ups:', error);
     next(error);
   }
 });
@@ -689,6 +696,8 @@ router.post('/:id/followup', async (req, res, next) => {
       });
     }
 
+    console.log(`📅 Creating follow-up for lead ${lead.lead_id}: Date=${follow_up_date}, Type=${follow_up_type}, Notes="${notes}"`);
+
     // Create follow-up entry in Daily Follow-up DB (also updates Leads Master)
     const result = await service.createFollowUp({
       lead_id: lead.lead_id || lead.enquiry_code,
@@ -702,7 +711,10 @@ router.post('/:id/followup', async (req, res, next) => {
       notes: notes || ''
     });
 
+    console.log(`✅ Follow-up created successfully:`, result);
+
     if (!result.success) {
+      console.error(`❌ Follow-up creation failed:`, result);
       return res.status(400).json(result);
     }
 
