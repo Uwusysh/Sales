@@ -62,11 +62,17 @@ const SRFProgress: React.FC<{ percentage: string }> = ({ percentage }) => {
     );
 };
 
+// Maximum follow-up slots to check
+const MAX_FOLLOW_UP_SLOTS = 10;
+
 // Follow-up Badge Component
 const FollowUpBadge: React.FC<{ lead: Lead }> = ({ lead }) => {
     // Check all follow-up columns for the next upcoming or overdue date
+    // Priority: numbered columns first, then fallback to main follow_up_date
     const followUpDates = [];
-    for (let i = 1; i <= 5; i++) {
+
+    // Check numbered follow-up columns (1-10)
+    for (let i = 1; i <= MAX_FOLLOW_UP_SLOTS; i++) {
         const dateField = `follow_up_${i}_date` as keyof Lead;
         const date = lead[dateField] as string;
         if (date) {
@@ -76,6 +82,15 @@ const FollowUpBadge: React.FC<{ lead: Lead }> = ({ lead }) => {
                 notes: lead[`follow_up_${i}_notes` as keyof Lead] as string
             });
         }
+    }
+
+    // Fallback: If no numbered columns, use the main follow_up_date
+    if (followUpDates.length === 0 && lead.follow_up_date) {
+        followUpDates.push({
+            date: lead.follow_up_date,
+            slot: 0,
+            notes: lead.follow_up_remarks || ''
+        });
     }
 
     // Sort by date and find the most relevant one (next upcoming or most overdue)
@@ -1050,10 +1065,12 @@ export default function LeadsPage() {
                                         </div>
                                     ) : (
                                         <>
-                                            {/* Display follow-ups from all columns */}
+                                            {/* Display follow-ups from all columns (1-10) */}
                                             {(() => {
                                                 const followUps = [];
-                                                for (let i = 1; i <= 5; i++) {
+
+                                                // Check numbered follow-up columns (1-10)
+                                                for (let i = 1; i <= MAX_FOLLOW_UP_SLOTS; i++) {
                                                     const dateField = `follow_up_${i}_date` as keyof Lead;
                                                     const notesField = `follow_up_${i}_notes` as keyof Lead;
                                                     const date = selectedLead[dateField] as string;
@@ -1068,6 +1085,35 @@ export default function LeadsPage() {
                                                         });
                                                     }
                                                 }
+
+                                                // Fallback: if no numbered columns, use main follow_up_date
+                                                if (followUps.length === 0 && selectedLead.follow_up_date) {
+                                                    followUps.push({
+                                                        date: selectedLead.follow_up_date,
+                                                        notes: selectedLead.follow_up_remarks || '',
+                                                        slot: 1,
+                                                        isCompleted: false
+                                                    });
+                                                }
+
+                                                // Also show from followups array if available (from Daily Follow-up DB)
+                                                if (selectedLead.followups && selectedLead.followups.length > 0) {
+                                                    // Merge with existing, avoiding duplicates by date
+                                                    const existingDates = new Set(followUps.map(f => f.date));
+                                                    selectedLead.followups.forEach((fu, idx) => {
+                                                        if (!existingDates.has(fu.follow_up_date)) {
+                                                            followUps.push({
+                                                                date: fu.follow_up_date,
+                                                                notes: fu.notes || '',
+                                                                slot: followUps.length + 1,
+                                                                isCompleted: fu.completed === 'Yes'
+                                                            });
+                                                        }
+                                                    });
+                                                }
+
+                                                // Sort by date descending (newest first)
+                                                followUps.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
                                                 return followUps.length > 0 ? (
                                                     <div className="relative border-l border-primary/20 ml-2 space-y-6 pl-4 pb-2">
@@ -1104,7 +1150,7 @@ export default function LeadsPage() {
                                                     </div>
                                                 ) : (
                                                     <div className="text-center py-4 text-xs text-muted-foreground">
-                                                        No follow-ups scheduled.
+                                                        No follow-ups scheduled. Click "Add Follow-up" to schedule one.
                                                     </div>
                                                 );
                                             })()}

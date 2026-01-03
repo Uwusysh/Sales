@@ -1,6 +1,17 @@
 // API Configuration
 const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5000/api';
 
+// Custom API Error class
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 // Auth helper
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem('auth_token');
@@ -42,6 +53,27 @@ export interface Lead {
   sales_owner: string;
   follow_up_date: string;
   follow_up_remarks: string;
+  // Numbered follow-up columns (stored in Leads Master for history)
+  follow_up_1_date?: string;
+  follow_up_1_notes?: string;
+  follow_up_2_date?: string;
+  follow_up_2_notes?: string;
+  follow_up_3_date?: string;
+  follow_up_3_notes?: string;
+  follow_up_4_date?: string;
+  follow_up_4_notes?: string;
+  follow_up_5_date?: string;
+  follow_up_5_notes?: string;
+  follow_up_6_date?: string;
+  follow_up_6_notes?: string;
+  follow_up_7_date?: string;
+  follow_up_7_notes?: string;
+  follow_up_8_date?: string;
+  follow_up_8_notes?: string;
+  follow_up_9_date?: string;
+  follow_up_9_notes?: string;
+  follow_up_10_date?: string;
+  follow_up_10_notes?: string;
   srf_completion_pct: string;
   srf_pdf_link: string;
   quotation_link: string;
