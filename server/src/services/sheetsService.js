@@ -967,23 +967,30 @@ export class EnhancedSheetsService {
 
     // Find the next available follow-up slot (1-5)
     let nextSlot = 1;
+    console.log(`🔍 Looking for empty follow-up slot for row ${targetRowNumber}...`);
+
     for (let i = 1; i <= 5; i++) {
       const dateField = `Follow_Up_${i}_Date`;
-      const notesField = `Follow_Up_${i}_Notes`;
+      const currentValue = row.get(dateField);
+      console.log(`   Slot ${i}: ${dateField} = "${currentValue}"`);
 
-      if (!row.get(dateField) || row.get(dateField) === '') {
+      if (!currentValue || currentValue === '') {
         nextSlot = i;
+        console.log(`✅ Found empty slot: ${nextSlot}`);
         break;
       }
 
       // If we reach slot 5 and all are filled, use slot 5 (overwrite oldest)
       if (i === 5) {
         nextSlot = 5;
+        console.log(`⚠️ All slots full, overwriting slot 5`);
       }
     }
 
     const dateField = `Follow_Up_${nextSlot}_Date`;
     const notesField = `Follow_Up_${nextSlot}_Notes`;
+
+    console.log(`📝 Saving to: ${dateField} = ${followUpDate}, ${notesField} = "${notes}"`);
 
     // Save follow-up data - just the notes as provided by user
     row.set(dateField, followUpDate);
@@ -997,6 +1004,8 @@ export class EnhancedSheetsService {
     await this.withRetry(async () => {
       await row.save();
     }, 'scheduleFollowUpInLeads-save');
+
+    console.log(`✅ Follow-up saved successfully to row ${targetRowNumber}, slot ${nextSlot}`);
 
     // Invalidate cache
     this.cache.leads.data = null;
