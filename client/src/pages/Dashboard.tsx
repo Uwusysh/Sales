@@ -151,7 +151,7 @@ export default function DashboardPage() {
       setRecentLeads(leadsRes.data || []);
       setLastUpdate(new Date());
       setError(null);
-    } catch (err) {
+    } catch (err: unknown) {
       // Stop polling on auth errors to prevent retry loops
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
         shouldPollRef.current = false;

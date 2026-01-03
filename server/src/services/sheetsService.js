@@ -46,6 +46,16 @@ const SHEET_CONFIG = {
       'Sales_Owner',
       'Follow_Up_Date',
       'Follow_Up_Remarks',
+      'Follow_Up_1_Date',  // Sequential follow-up columns
+      'Follow_Up_1_Notes',
+      'Follow_Up_2_Date',
+      'Follow_Up_2_Notes',
+      'Follow_Up_3_Date',
+      'Follow_Up_3_Notes',
+      'Follow_Up_4_Date',
+      'Follow_Up_4_Notes',
+      'Follow_Up_5_Date',
+      'Follow_Up_5_Notes',
       'SRF_Completion_Pct', // SRF completion percentage
       'SRF_PDF_Link',
       'Quotation_Link',
@@ -523,6 +533,17 @@ export class EnhancedSheetsService {
       sales_owner: row.get('Sales_Owner'),
       follow_up_date: row.get('Follow_Up_Date'),
       follow_up_remarks: row.get('Follow_Up_Remarks'),
+      // Multiple follow-up columns
+      follow_up_1_date: row.get('Follow_Up_1_Date'),
+      follow_up_1_notes: row.get('Follow_Up_1_Notes'),
+      follow_up_2_date: row.get('Follow_Up_2_Date'),
+      follow_up_2_notes: row.get('Follow_Up_2_Notes'),
+      follow_up_3_date: row.get('Follow_Up_3_Date'),
+      follow_up_3_notes: row.get('Follow_Up_3_Notes'),
+      follow_up_4_date: row.get('Follow_Up_4_Date'),
+      follow_up_4_notes: row.get('Follow_Up_4_Notes'),
+      follow_up_5_date: row.get('Follow_Up_5_Date'),
+      follow_up_5_notes: row.get('Follow_Up_5_Notes'),
       srf_completion_pct: row.get('SRF_Completion_Pct'),
       srf_pdf_link: row.get('SRF_PDF_Link'),
       quotation_link: row.get('Quotation_Link'),
@@ -663,7 +684,13 @@ export class EnhancedSheetsService {
    */
   async getLeadById(leadId) {
     const leads = await this.getLeads();
-    return leads.find(l => l.lead_id === leadId || l.enquiry_code === leadId || l.id === leadId);
+    const searchId = String(leadId);
+    return leads.find(l =>
+      l.lead_id === searchId ||
+      l.enquiry_code === searchId ||
+      String(l.id) === searchId ||
+      String(l._rowNumber) === searchId
+    );
   }
 
   // ============ SRF OPERATIONS ============
@@ -762,7 +789,29 @@ export class EnhancedSheetsService {
       });
     }, 'createFollowUp');
 
+    // Also update the lead's Follow_Up_Date in Leads Master
+    try {
+      const leadSheet = await this.getOrCreateSheet('Leads Master');
+      const leadRows = await this.withRetry(async () => leadSheet.getRows(), 'createFollowUp-updateLead');
+      const leadRow = leadRows.find(r =>
+        r.get('Lead_ID') === followUpData.lead_id ||
+        r.get('Enquiry_Code') === followUpData.lead_id
+      );
+
+      if (leadRow) {
+        leadRow.set('Follow_Up_Date', followUpData.follow_up_date);
+        leadRow.set('Follow_Up_Remarks', followUpData.notes || '');
+        leadRow.set('Updated_At', new Date().toISOString());
+        await this.withRetry(async () => {
+          await leadRow.save();
+        }, 'createFollowUp-saveLead');
+      }
+    } catch (err) {
+      console.warn('Failed to update lead follow-up date:', err.message);
+    }
+
     this.cache.followups.data = null;
+    this.cache.leads.data = null; // Also invalidate leads cache
     return { success: true, rowNumber: newRow.rowNumber };
   }
 
@@ -992,17 +1041,126 @@ export class EnhancedSheetsService {
   }
 
   /**
+   * Schedule a follow-up directly in Leads Master sheet using sequential columns
+   */
+  async scheduleFollowUpInLeads(leadId, followUpDate, notes = '', followUpType = 'Call') {
+    const sheet = await this.getOrCreateSheet('Leads Master');
+    const rows = await this.withRetry(async () => sheet.getRows(), 'scheduleFollowUpInLeads');
+
+    const row = rows.find(r => r.get('Lead_ID') === leadId || r.get('Enquiry_Code') === leadId);
+
+    if (!row) {
+      return { success: false, error: 'Lead not found' };
+    }
+
+    // Find the next available follow-up slot (1-5)
+    let nextSlot = 1;
+    for (let i = 1; i <= 5; i++) {
+      const dateField = `Follow_Up_${i}_Date`;
+      const notesField = `Follow_Up_${i}_Notes`;
+
+      if (!row.get(dateField) || row.get(dateField) === '') {
+        nextSlot = i;
+        break;
+      }
+
+      // If we reach slot 5 and all are filled, use slot 5 (overwrite oldest)
+      if (i === 5) {
+        nextSlot = 5;
+      }
+    }
+
+    const dateField = `Follow_Up_${nextSlot}_Date`;
+    const notesField = `Follow_Up_${nextSlot}_Notes`;
+
+    // Save follow-up data - just the notes as provided by user
+    row.set(dateField, followUpDate);
+    row.set(notesField, notes || '');
+
+    // Also update the main Follow_Up_Date and Follow_Up_Remarks for compatibility
+    row.set('Follow_Up_Date', followUpDate);
+    row.set('Follow_Up_Remarks', notes || '');
+    row.set('Updated_At', new Date().toISOString());
+
+    await this.withRetry(async () => {
+      await row.save();
+    }, 'scheduleFollowUpInLeads-save');
+
+    // Invalidate cache
+    this.cache.leads.data = null;
+
+    return {
+      success: true,
+      message: `Follow-up scheduled in slot ${nextSlot}`,
+      slot: nextSlot
+    };
+  }
+
+  /**
    * Mark a follow-up as completed
    * Updates both Daily Follow-up DB and Leads Master
    */
   async completeFollowUp(leadId, followUpDate, outcome = '', nextFollowUpDate = null, nextFollowUpType = 'Call') {
-    const completionTimestamp = new Date().toISOString();
-    let dbEntryFound = false;
+    // First try to complete in the new column-based system (Leads Master)
+    try {
+      const sheet = await this.getOrCreateSheet('Leads Master');
+      const rows = await this.withRetry(async () => sheet.getRows(), 'completeFollowUp-LeadsMaster');
 
-    // Try to update Daily Follow-up DB entry if it exists
+      const row = rows.find(r => r.get('Lead_ID') === leadId || r.get('Enquiry_Code') === leadId);
+
+      if (row) {
+        // Find the follow-up slot that matches the date
+        let foundSlot = null;
+        for (let i = 1; i <= 5; i++) {
+          const dateField = `Follow_Up_${i}_Date`;
+
+          if (row.get(dateField) === followUpDate) {
+            foundSlot = i;
+            // Mark as completed by appending to notes
+            const notesField = `Follow_Up_${i}_Notes`;
+            const existingNotes = row.get(notesField) || '';
+            const completionNote = `\n[COMPLETED ${new Date().toLocaleDateString('en-IN')}] ${outcome || 'Marked as done'}`;
+            row.set(notesField, existingNotes + completionNote);
+            break;
+          }
+        }
+
+        if (foundSlot) {
+          // Schedule next follow-up if provided
+          if (nextFollowUpDate) {
+            const nextResult = await this.scheduleFollowUpInLeads(leadId, nextFollowUpDate, '', nextFollowUpType);
+            if (!nextResult.success) {
+              console.warn('Failed to schedule next follow-up:', nextResult.error);
+            }
+          } else {
+            // Clear main follow-up date since it's completed
+            row.set('Follow_Up_Date', '');
+          }
+
+          row.set('Updated_At', new Date().toISOString());
+
+          await this.withRetry(async () => {
+            await row.save();
+          }, 'completeFollowUp-LeadsMaster-save');
+
+          // Invalidate caches
+          this.cache.leads.data = null;
+
+          return {
+            success: true,
+            message: `Follow-up in slot ${foundSlot} marked as completed`,
+            completedSlot: foundSlot
+          };
+        }
+      }
+    } catch (leadsMasterError) {
+      console.log('Leads Master completion failed, trying Daily Follow-up DB:', leadsMasterError.message);
+    }
+
+    // Fall back to the old Daily Follow-up DB system
     try {
       const sheet = await this.getOrCreateSheet('Daily Follow-up DB');
-      const rows = await this.withRetry(async () => sheet.getRows(), 'completeFollowUp-fetch');
+      const rows = await this.withRetry(async () => sheet.getRows(), 'completeFollowUp-DB');
 
       // Find the specific follow-up entry
       const row = rows.find(r =>
@@ -1012,11 +1170,10 @@ export class EnhancedSheetsService {
       );
 
       if (row) {
-        dbEntryFound = true;
         // Mark as completed with timestamp
         row.set('Completed', 'Yes');
         row.set('Status_After', outcome || 'Completed');
-        
+
         // Add completion note with timestamp
         const existingNotes = row.get('Notes') || '';
         const completionNote = `\n[COMPLETED ${new Date().toLocaleString('en-IN')}] ${outcome || 'Marked as done'}`;
@@ -1024,78 +1181,23 @@ export class EnhancedSheetsService {
 
         await this.withRetry(async () => {
           await row.save();
-        }, 'completeFollowUp-save');
+        }, 'completeFollowUp-DB-save');
+
+        // Invalidate caches
+        this.cache.followups.data = null;
+        this.cache.leads.data = null;
+
+        return {
+          success: true,
+          message: 'Follow-up marked as completed (legacy system)',
+          legacySystem: true
+        };
       }
-    } catch (err) {
-      console.log('No DB entry found for follow-up, will update Leads Master only');
+    } catch (dbError) {
+      console.error('Daily Follow-up DB completion also failed:', dbError.message);
     }
 
-    // Always update Leads Master - clear or set new follow-up date
-    const leadSheet = await this.getOrCreateSheet('Leads Master');
-    const leadRows = await this.withRetry(async () => leadSheet.getRows(), 'completeFollowUp-leadFetch');
-    
-    const leadRow = leadRows.find(r =>
-      r.get('Lead_ID') === leadId || r.get('Enquiry_Code') === leadId
-    );
-
-    if (leadRow) {
-      // Update follow-up date (clear if no next date, or set new date)
-      if (nextFollowUpDate) {
-        leadRow.set('Follow_Up_Date', nextFollowUpDate);
-        leadRow.set('Follow_Up_Remarks', `Next [${nextFollowUpType}]: ${outcome || 'Follow-up scheduled'}`);
-        
-        // Also create a NEW entry in Daily Follow-up DB for the future follow-up
-        try {
-          await this.createFollowUp({
-            lead_id: leadId,
-            follow_up_date: nextFollowUpDate,
-            follow_up_time: '',
-            sales_owner: leadRow.get('Lead_Owner') || leadRow.get('Sales_Owner') || 'Agent',
-            client_name: leadRow.get('Client_Person_Name') || leadRow.get('Client_Company_Name'),
-            client_number: leadRow.get('Client_Number'),
-            follow_up_type: nextFollowUpType,
-            priority: 'Medium',
-            notes: `Scheduled from previous completion: ${outcome}`
-          });
-        } catch (fuErr) {
-          console.error('Failed to create new follow-up entry:', fuErr.message);
-        }
-      } else {
-        // Clear the follow-up date since it's completed
-        leadRow.set('Follow_Up_Date', '');
-        leadRow.set('Follow_Up_Remarks', `[${new Date().toLocaleDateString('en-IN')}] ${outcome || 'Completed'}`);
-      }
-      leadRow.set('Updated_At', completionTimestamp);
-      
-      // Append to remarks for tracking
-      const existingRemarks = leadRow.get('Remarks') || '';
-      const completionRemark = ` | F/U Done: ${new Date().toLocaleDateString('en-IN')} - ${outcome || 'Completed'}`;
-      if (!existingRemarks.includes(completionRemark.substring(0, 20))) {
-        leadRow.set('Remarks', existingRemarks + completionRemark);
-      }
-
-      await this.withRetry(async () => {
-        await leadRow.save();
-      }, 'completeFollowUp-leadSave');
-    }
-
-    // Invalidate caches
-    this.cache.followups.data = null;
-    this.cache.leads.data = null;
-
-    // Log sync action
-    await this.logSync('UPDATE', 'FollowUp', leadId, 
-      { follow_up_date: followUpDate, completed: 'No' },
-      { completed: 'Yes', completion_timestamp: completionTimestamp, next_follow_up: nextFollowUpDate, next_type: nextFollowUpType },
-      'Dashboard'
-    );
-
-    return { 
-      success: true, 
-      message: 'Follow-up marked as completed',
-      completedAt: completionTimestamp,
-      nextFollowUpDate: nextFollowUpDate || null
-    };
+    return { success: false, error: 'Follow-up not found in either system' };
   }
 
   // ============ QUOTATION OPERATIONS ============

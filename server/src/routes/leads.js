@@ -669,7 +669,7 @@ router.patch('/:id/status', async (req, res, next) => {
 router.post('/:id/followup', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const followUpData = req.body;
+    const { follow_up_date, notes, follow_up_type = 'Call' } = req.body;
     const authenticatedAgent = req.user.agentName;
 
     const service = getEnhancedSheetsService();
@@ -689,18 +689,22 @@ router.post('/:id/followup', async (req, res, next) => {
       });
     }
 
-    // Create follow-up entry
+    // Create follow-up entry in Daily Follow-up DB (also updates Leads Master)
     const result = await service.createFollowUp({
       lead_id: lead.lead_id || lead.enquiry_code,
+      follow_up_date: follow_up_date,
+      follow_up_time: req.body.follow_up_time || '',
+      sales_owner: authenticatedAgent,
       client_name: lead.client_person || lead.client_company,
       client_number: lead.client_number,
-      ...followUpData
+      follow_up_type: follow_up_type || 'Call',
+      priority: req.body.priority || 'Medium',
+      notes: notes || ''
     });
 
-    // Update lead's follow-up date
-    await service.updateLead(id, {
-      Follow_Up_Date: followUpData.follow_up_date
-    });
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
 
     leadsCache.data = null;
 

@@ -4,12 +4,11 @@ import { AppLayout } from '../components/layout/AppLayout';
 import {
     Clock, AlertCircle, CheckCircle, Phone, Calendar,
     RefreshCw, User, MapPin, Package, ChevronRight,
-    MessageSquare, Mail, Video, X, CheckSquare
+    MessageSquare, Mail, Video, X
 } from 'lucide-react';
 import {
     fetchActiveFollowUps, completeFollowUp, FollowUp
 } from '../lib/api';
-import { VoiceInput } from '../components/ui/VoiceInput';
 
 // Priority colors
 const priorityColors: Record<string, { bg: string; text: string; border: string }> = {
@@ -19,23 +18,14 @@ const priorityColors: Record<string, { bg: string; text: string; border: string 
 };
 
 // Follow-up type icons
-const getFollowUpIcons = (type: string) => {
-    const normalizedType = type?.toLowerCase() || '';
-    const icons: React.ReactNode[] = [];
-    
-    if (normalizedType.includes('call')) icons.push(<Phone key="call" className="w-4 h-4" />);
-    if (normalizedType.includes('whatsapp')) icons.push(<MessageSquare key="whatsapp" className="w-4 h-4" />);
-    if (normalizedType.includes('email')) icons.push(<Mail key="email" className="w-4 h-4" />);
-    if (normalizedType.includes('meeting')) icons.push(<Video key="meeting" className="w-4 h-4" />);
-    if (normalizedType.includes('site visit')) icons.push(<MapPin key="site" className="w-4 h-4" />);
-    
-    if (icons.length === 0) icons.push(<Phone key="default" className="w-4 h-4" />);
-    
-    return (
-        <div className="flex items-center gap-1.5">
-            {icons}
-        </div>
-    );
+const getFollowUpIcon = (type: string) => {
+    switch (type?.toLowerCase()) {
+        case 'call': return <Phone className="w-4 h-4" />;
+        case 'whatsapp': return <MessageSquare className="w-4 h-4" />;
+        case 'email': return <Mail className="w-4 h-4" />;
+        case 'meeting': return <Video className="w-4 h-4" />;
+        default: return <Phone className="w-4 h-4" />;
+    }
 };
 
 export default function FollowUpsPage() {
@@ -53,11 +43,9 @@ export default function FollowUpsPage() {
     const [selectedFollowUp, setSelectedFollowUp] = useState<FollowUp | null>(null);
     const [completionForm, setCompletionForm] = useState({
         outcome: '',
-        nextDate: '',
-        nextTypes: ['Call'] as string[]
+        nextDate: ''
     });
     const [viewMode, setViewMode] = useState<'my' | 'all'>('my');
-    const [completingId, setCompletingId] = useState<string | null>(null);
 
     const loadFollowUps = useCallback(async () => {
         try {
@@ -91,29 +79,6 @@ export default function FollowUpsPage() {
         // Note: Lead details could be loaded here if needed for the modal
     };
 
-    // Quick complete - single click to mark as done
-    const handleQuickComplete = async (followUp: FollowUp, e: React.MouseEvent) => {
-        e.stopPropagation(); // Don't open the modal
-        
-        const uniqueId = followUp.lead_id + followUp.follow_up_date;
-        setCompletingId(uniqueId);
-        
-        try {
-            await completeFollowUp(
-                followUp.lead_id,
-                followUp.follow_up_date,
-                'Quick completed',
-                undefined
-            );
-            // Reload to refresh the list
-            await loadFollowUps();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to complete follow-up');
-        } finally {
-            setCompletingId(null);
-        }
-    };
-
     const handleCompleteFollowUp = async () => {
         if (!selectedFollowUp) return;
 
@@ -123,13 +88,12 @@ export default function FollowUpsPage() {
                 selectedFollowUp.lead_id,
                 selectedFollowUp.follow_up_date,
                 completionForm.outcome,
-                completionForm.nextDate || undefined,
-                completionForm.nextTypes.length > 0 ? completionForm.nextTypes.join(', ') : undefined
+                completionForm.nextDate || undefined
             );
 
             // Reset and reload
             setSelectedFollowUp(null);
-            setCompletionForm({ outcome: '', nextDate: '', nextTypes: ['Call'] });
+            setCompletionForm({ outcome: '', nextDate: '' });
             await loadFollowUps();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to complete follow-up');
@@ -257,12 +221,12 @@ export default function FollowUpsPage() {
                 {/* Table Header */}
                 <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 bg-muted/30 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     <div className="col-span-3">Client</div>
-                    <div className="col-span-2">Follow-Up Date</div>
+                    <div className="col-span-2">Date & Time</div>
                     <div className="col-span-1">Type</div>
                     <div className="col-span-2">Owner</div>
                     <div className="col-span-2">Lead Info</div>
                     <div className="col-span-1">Priority</div>
-                    <div className="col-span-1 text-right">Complete</div>
+                    <div className="col-span-1">Action</div>
                 </div>
 
                 {/* Loading State */}
@@ -341,8 +305,8 @@ export default function FollowUpsPage() {
                             {/* Type */}
                             <div className="col-span-1">
                                 <div className="flex items-center gap-2">
-                                    {getFollowUpIcons(followUp.follow_up_type)}
-                                    <span className="text-[10px] text-muted-foreground hidden lg:inline truncate max-w-[60px]">
+                                    {getFollowUpIcon(followUp.follow_up_type)}
+                                    <span className="text-sm text-muted-foreground hidden lg:inline">
                                         {followUp.follow_up_type}
                                     </span>
                                 </div>
@@ -383,24 +347,8 @@ export default function FollowUpsPage() {
                                 )}
                             </div>
 
-                            {/* Action - Mark Complete Button */}
-                            <div className="col-span-1 flex items-center justify-end gap-2">
-                                <button
-                                    onClick={(e) => handleQuickComplete(followUp, e)}
-                                    disabled={completingId === (followUp.lead_id + followUp.follow_up_date)}
-                                    className={`p-2 rounded-lg transition-all border ${
-                                        completingId === (followUp.lead_id + followUp.follow_up_date)
-                                            ? 'bg-green-100 border-green-300 cursor-wait'
-                                            : 'hover:bg-green-50 border-transparent hover:border-green-200'
-                                    }`}
-                                    title="Mark as Completed"
-                                >
-                                    {completingId === (followUp.lead_id + followUp.follow_up_date) ? (
-                                        <RefreshCw className="w-4 h-4 text-green-600 animate-spin" />
-                                    ) : (
-                                        <CheckSquare className="w-4 h-4 text-green-600" />
-                                    )}
-                                </button>
+                            {/* Action */}
+                            <div className="col-span-1 flex items-center justify-end">
                                 <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                             </div>
                         </div>
@@ -426,7 +374,7 @@ export default function FollowUpsPage() {
                         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
                         onClick={() => {
                             setSelectedFollowUp(null);
-                            setCompletionForm({ outcome: '', nextDate: '', nextTypes: ['Call'] });
+                            setCompletionForm({ outcome: '', nextDate: '' });
                         }}
                     />
                     <div className="relative w-full max-w-lg bg-card shadow-2xl rounded-xl animate-in zoom-in-95 duration-200">
@@ -443,7 +391,7 @@ export default function FollowUpsPage() {
                             <button
                                 onClick={() => {
                                     setSelectedFollowUp(null);
-                                    setCompletionForm({ outcome: '', nextDate: '', nextTypes: ['Call'] });
+                                    setCompletionForm({ outcome: '', nextDate: '' });
                                 }}
                                 className="p-2 hover:bg-secondary rounded-lg"
                             >
@@ -463,10 +411,7 @@ export default function FollowUpsPage() {
                                 </div>
                                 <div className="flex items-center justify-between text-sm">
                                     <span className="text-muted-foreground">Type:</span>
-                                    <div className="flex items-center gap-2 font-medium">
-                                        {getFollowUpIcons(selectedFollowUp.follow_up_type)}
-                                        <span>{selectedFollowUp.follow_up_type}</span>
-                                    </div>
+                                    <span className="font-medium">{selectedFollowUp.follow_up_type}</span>
                                 </div>
                                 {selectedFollowUp.notes && (
                                     <div className="pt-2 border-t border-border">
@@ -481,73 +426,25 @@ export default function FollowUpsPage() {
                                 <label className="text-sm font-medium text-foreground mb-2 block">
                                     Outcome / Notes
                                 </label>
-                                <VoiceInput
+                                <textarea
                                     value={completionForm.outcome}
-                                    onChange={(val) => setCompletionForm({ ...completionForm, outcome: val })}
-                                    placeholder="What happened during this follow-up? (Type or speak)"
-                                    className="bg-background"
-                                    minHeight="100px"
+                                    onChange={(e) => setCompletionForm({ ...completionForm, outcome: e.target.value })}
+                                    placeholder="What happened during this follow-up?"
+                                    className="w-full p-3 rounded-lg border border-border bg-background text-sm min-h-[100px]"
                                 />
                             </div>
 
                             {/* Next Follow-Up Date */}
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="text-sm font-medium text-foreground mb-2 block">
-                                        Next Follow-Up Date (Optional)
-                                    </label>
-                                    <input
-                                        type="date"
-                                        value={completionForm.nextDate}
-                                        onChange={(e) => setCompletionForm({ ...completionForm, nextDate: e.target.value })}
-                                        className="w-full p-3 rounded-lg border border-border bg-background text-sm"
-                                    />
-                                </div>
-                                
-                                <div>
-                                    <label className="text-sm font-medium text-foreground mb-2 block">
-                                        Next Type (Select multiple)
-                                    </label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {[
-                                            { id: 'Call', label: '📞 Call' },
-                                            { id: 'WhatsApp', label: '💬 WhatsApp' },
-                                            { id: 'Email', label: '📧 Email' },
-                                            { id: 'Meeting', label: '🤝 Meeting' },
-                                            { id: 'Site Visit', label: '🏗️ Site Visit' }
-                                        ].map(type => {
-                                            const isSelected = completionForm.nextTypes.includes(type.id);
-                                            return (
-                                                <button
-                                                    key={type.id}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        if (isSelected) {
-                                                            setCompletionForm({
-                                                                ...completionForm,
-                                                                nextTypes: completionForm.nextTypes.filter(t => t !== type.id)
-                                                            });
-                                                        } else {
-                                                            setCompletionForm({
-                                                                ...completionForm,
-                                                                nextTypes: [...completionForm.nextTypes, type.id]
-                                                            });
-                                                        }
-                                                    }}
-                                                    className={`
-                                                        px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
-                                                        ${isSelected
-                                                            ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                                                            : 'bg-background border-border text-muted-foreground hover:bg-secondary'
-                                                        }
-                                                    `}
-                                                >
-                                                    {type.label}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
+                            <div>
+                                <label className="text-sm font-medium text-foreground mb-2 block">
+                                    Next Follow-Up Date (Optional)
+                                </label>
+                                <input
+                                    type="date"
+                                    value={completionForm.nextDate}
+                                    onChange={(e) => setCompletionForm({ ...completionForm, nextDate: e.target.value })}
+                                    className="w-full p-3 rounded-lg border border-border bg-background text-sm"
+                                />
                             </div>
                         </div>
 
@@ -556,7 +453,7 @@ export default function FollowUpsPage() {
                             <button
                                 onClick={() => {
                                     setSelectedFollowUp(null);
-                                    setCompletionForm({ outcome: '', nextDate: '', nextTypes: ['Call'] });
+                                    setCompletionForm({ outcome: '', nextDate: '' });
                                 }}
                                 className="px-4 py-2 text-sm text-muted-foreground hover:bg-secondary rounded-lg"
                             >

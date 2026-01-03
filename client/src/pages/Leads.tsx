@@ -230,7 +230,7 @@ export default function LeadsPage() {
             setLeads(leadsRes.data);
             setHasMore(leadsRes.meta.hasMore);
             setStatusCounts(leadsRes.meta.statusCounts);
-        } catch (err) {
+        } catch (err: unknown) {
             // Stop polling on auth errors to prevent retry loops
             if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
                 shouldPollRef.current = false;
@@ -296,11 +296,12 @@ export default function LeadsPage() {
     // Load full details when lead is selected
     useEffect(() => {
         if (selectedLead?.id) {
+            const leadId = selectedLead.lead_id || selectedLead.enquiry_code || selectedLead.id;
             // Only fetch if we don't have followups yet or if it was just selected
             // We can detect if it's "fresh" from the list by checking if followups is undefined
             if (!selectedLead.followups) {
                 setIsDetailLoading(true);
-                fetchLeadById(selectedLead.id)
+                fetchLeadById(leadId)
                     .then(res => {
                         setSelectedLead(prev => prev ? { ...prev, ...res.data } : res.data);
                     })
@@ -308,14 +309,16 @@ export default function LeadsPage() {
                     .finally(() => setIsDetailLoading(false));
             }
         }
-    }, [selectedLead?.id]);
+    }, [selectedLead?.id, selectedLead?.lead_id, selectedLead?.enquiry_code]);
 
     const handleScheduleFollowUp = async () => {
         if (!selectedLead || !followUpForm.date || followUpForm.types.length === 0) return;
 
         try {
             setIsDetailLoading(true);
-            await scheduleFollowUp(selectedLead.id, {
+            const leadId = selectedLead.lead_id || selectedLead.enquiry_code || selectedLead.id;
+
+            await scheduleFollowUp(leadId, {
                 follow_up_date: followUpForm.date,
                 follow_up_time: followUpForm.time,
                 notes: followUpForm.notes,
@@ -324,7 +327,7 @@ export default function LeadsPage() {
             });
 
             // Refresh details
-            const res = await fetchLeadById(selectedLead.id);
+            const res = await fetchLeadById(leadId);
             setSelectedLead(res.data);
 
             // Reset form

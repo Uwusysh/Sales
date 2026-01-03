@@ -1,14 +1,14 @@
-// API Configuration
-const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5000/api';
+/**
+ * API Functions for Lead Management
+ *
+ * Uses the centralized apiClient for all requests.
+ * Token injection and error handling are automatic.
+ */
 
-// Auth helper
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('auth_token');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-  };
-}
+import api, { ApiError } from './apiClient';
+
+// Re-export ApiError for consumers
+export { ApiError };
 
 // ============ TYPES ============
 
@@ -42,6 +42,17 @@ export interface Lead {
   sales_owner: string;
   follow_up_date: string;
   follow_up_remarks: string;
+  // Multiple follow-up columns
+  follow_up_1_date: string;
+  follow_up_1_notes: string;
+  follow_up_2_date: string;
+  follow_up_2_notes: string;
+  follow_up_3_date: string;
+  follow_up_3_notes: string;
+  follow_up_4_date: string;
+  follow_up_4_notes: string;
+  follow_up_5_date: string;
+  follow_up_5_notes: string;
   srf_completion_pct: string;
   srf_pdf_link: string;
   quotation_link: string;
@@ -163,45 +174,21 @@ export async function fetchLeads(params?: FetchLeadsOptions): Promise<LeadsRespo
   if (params?.srfIncomplete) query.set('srfIncomplete', 'true');
   if (params?.viewAll) query.set('viewAll', 'true');
 
-  const response = await fetch(`${API_BASE}/leads?${query.toString()}`, {
-    headers: getAuthHeaders()
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch leads');
-  }
-
-  return response.json();
+  return api.get<LeadsResponse>(`/leads?${query.toString()}`);
 }
 
 /**
  * Fetch dashboard statistics
  */
 export async function fetchLeadStats(): Promise<StatsResponse> {
-  const response = await fetch(`${API_BASE}/leads/stats`, {
-    headers: getAuthHeaders()
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch stats');
-  }
-
-  return response.json();
+  return api.get<StatsResponse>('/leads/stats');
 }
 
 /**
  * Fetch single lead by ID with related data
  */
 export async function fetchLeadById(id: string): Promise<{ success: boolean; data: Lead }> {
-  const response = await fetch(`${API_BASE}/leads/${id}`, {
-    headers: getAuthHeaders()
-  });
-
-  if (!response.ok) {
-    throw new Error('Lead not found');
-  }
-
-  return response.json();
+  return api.get<{ success: boolean; data: Lead }>(`/leads/${id}`);
 }
 
 /**
@@ -212,107 +199,42 @@ export async function checkDuplicate(phone?: string, company?: string): Promise<
   if (phone) query.set('phone', phone);
   if (company) query.set('company', company);
 
-  const response = await fetch(`${API_BASE}/leads/check-duplicate?${query.toString()}`, {
-    headers: getAuthHeaders()
-  });
-
-  if (!response.ok) {
-    throw new Error('Duplicate check failed');
-  }
-
-  return response.json();
+  return api.get<{ success: boolean; data: DuplicateCheckResult }>(`/leads/check-duplicate?${query.toString()}`);
 }
 
 /**
  * Create a new lead
  */
 export async function createLead(leadData: Partial<Lead>): Promise<{ success: boolean; lead_id?: string; duplicate?: boolean; duplicateInfo?: DuplicateCheckResult }> {
-  const response = await fetch(`${API_BASE}/leads`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(leadData)
-  });
-
-  const data = await response.json();
-
-  // 409 = duplicate found
-  if (response.status === 409) {
-    return data;
-  }
-
-  if (!response.ok) {
-    throw new Error(data.error || 'Failed to create lead');
-  }
-
-  return data;
+  return api.post<{ success: boolean; lead_id?: string; duplicate?: boolean; duplicateInfo?: DuplicateCheckResult }>('/leads', leadData);
 }
 
 /**
  * Force create lead even with duplicates
  */
 export async function forceCreateLead(leadData: Partial<Lead>, linkToPrevious?: string): Promise<{ success: boolean; lead_id: string }> {
-  const response = await fetch(`${API_BASE}/leads/force-create`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ leadData, linkToPrevious })
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to create lead');
-  }
-
-  return response.json();
+  return api.post<{ success: boolean; lead_id: string }>('/leads/force-create', { leadData, linkToPrevious });
 }
 
 /**
  * Update lead fields
  */
 export async function updateLead(id: string, updates: Partial<Lead>): Promise<{ success: boolean; changedFields?: string[] }> {
-  const response = await fetch(`${API_BASE}/leads/${id}`, {
-    method: 'PATCH',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(updates)
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to update lead');
-  }
-
-  return response.json();
+  return api.patch<{ success: boolean; changedFields?: string[] }>(`/leads/${id}`, updates);
 }
 
 /**
  * Quick status update
  */
 export async function updateLeadStatus(id: string, status: string, remarks?: string): Promise<{ success: boolean }> {
-  const response = await fetch(`${API_BASE}/leads/${id}/status`, {
-    method: 'PATCH',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ status, remarks })
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to update status');
-  }
-
-  return response.json();
+  return api.patch<{ success: boolean }>(`/leads/${id}/status`, { status, remarks });
 }
 
 /**
  * Schedule follow-up for a lead
  */
 export async function scheduleFollowUp(leadId: string, followUp: Partial<FollowUp>): Promise<{ success: boolean }> {
-  const response = await fetch(`${API_BASE}/leads/${leadId}/followup`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(followUp)
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to schedule follow-up');
-  }
-
-  return response.json();
+  return api.post<{ success: boolean }>(`/leads/${leadId}/followup`, followUp);
 }
 
 /**
@@ -322,15 +244,7 @@ export async function fetchTodayFollowUps(owner?: string): Promise<{ success: bo
   const query = new URLSearchParams();
   if (owner) query.set('owner', owner);
 
-  const response = await fetch(`${API_BASE}/leads/followups/today?${query.toString()}`, {
-    headers: getAuthHeaders()
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch follow-ups');
-  }
-
-  return response.json();
+  return api.get<{ success: boolean; data: FollowUp[]; count: number }>(`/leads/followups/today?${query.toString()}`);
 }
 
 /**
@@ -340,15 +254,7 @@ export async function fetchOverdueFollowUps(owner?: string): Promise<{ success: 
   const query = new URLSearchParams();
   if (owner) query.set('owner', owner);
 
-  const response = await fetch(`${API_BASE}/leads/followups/overdue?${query.toString()}`, {
-    headers: getAuthHeaders()
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch overdue follow-ups');
-  }
-
-  return response.json();
+  return api.get<{ success: boolean; data: FollowUp[]; count: number }>(`/leads/followups/overdue?${query.toString()}`);
 }
 
 /**
@@ -372,15 +278,7 @@ export async function fetchActiveFollowUps(owner?: string): Promise<{
   const query = new URLSearchParams();
   if (owner) query.set('owner', owner);
 
-  const response = await fetch(`${API_BASE}/leads/followups/active?${query.toString()}`, {
-    headers: getAuthHeaders()
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch active follow-ups');
-  }
-
-  return response.json();
+  return api.get(`/leads/followups/active?${query.toString()}`);
 }
 
 /**
@@ -393,49 +291,27 @@ export async function completeFollowUp(
   nextFollowUpDate?: string,
   nextFollowUpType?: string
 ): Promise<{ success: boolean; message?: string; error?: string }> {
-  const response = await fetch(`${API_BASE}/leads/followups/complete`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({
-      lead_id: leadId,
-      follow_up_date: followUpDate,
-      outcome,
-      next_follow_up_date: nextFollowUpDate,
-      next_follow_up_type: nextFollowUpType
-    })
+  return api.post<{ success: boolean; message?: string; error?: string }>('/leads/followups/complete', {
+    lead_id: leadId,
+    follow_up_date: followUpDate,
+    outcome,
+    next_follow_up_date: nextFollowUpDate,
+    next_follow_up_type: nextFollowUpType
   });
-
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.error || 'Failed to complete follow-up');
-  }
-
-  return response.json();
 }
 
 /**
  * Force refresh cache
  */
 export async function refreshLeadsCache(): Promise<void> {
-  await fetch(`${API_BASE}/leads/refresh`, {
-    method: 'POST',
-    headers: getAuthHeaders()
-  });
+  await api.post('/leads/refresh');
 }
 
 /**
  * Get sync status
  */
 export async function getSyncStatus(): Promise<{ success: boolean; data: SyncStatus }> {
-  const response = await fetch(`${API_BASE}/leads/sync/status`, {
-    headers: getAuthHeaders()
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to get sync status');
-  }
-
-  return response.json();
+  return api.get<{ success: boolean; data: SyncStatus }>('/leads/sync/status');
 }
 
 // ============ UTILITY FUNCTIONS ============
