@@ -665,6 +665,10 @@ router.patch('/:id/status', async (req, res, next) => {
  * POST /api/leads/:id/followup
  * Schedule a follow-up for a lead
  * PROTECTED: Can only schedule followup for own leads
+ *
+ * This now saves follow-up data in TWO places:
+ * 1. Daily Follow-up DB sheet (for detailed tracking)
+ * 2. Leads Master sheet with numbered columns (Follow_Up_1, Follow_Up_1_Note, etc.)
  */
 router.post('/:id/followup', async (req, res, next) => {
   try {
@@ -683,33 +687,46 @@ router.post('/:id/followup', async (req, res, next) => {
     const leadOwner = String(lead.lead_owner || '').trim();
     if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
       console.warn(`🚫 Unauthorized followup creation: ${authenticatedAgent} tried to create followup for ${leadOwner}'s lead ${id}`);
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Forbidden: You can only manage followups for your own leads' 
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You can only manage followups for your own leads'
       });
     }
 
-    // Create follow-up entry
-    const result = await service.createFollowUp({
-      lead_id: lead.lead_id || lead.enquiry_code,
+    const leadIdentifier = lead.lead_id || lead.enquiry_code;
+
+    // 1. Create follow-up entry in Daily Follow-up DB
+    const dbResult = await service.createFollowUp({
+      lead_id: leadIdentifier,
       client_name: lead.client_person || lead.client_company,
       client_number: lead.client_number,
       ...followUpData
     });
 
-    // Update lead's follow-up date
-    await service.updateLead(id, {
-      Follow_Up_Date: followUpData.follow_up_date
-    });
+    // 2. Add follow-up to Leads Master with numbered columns (Follow_Up_1, Follow_Up_1_Note, etc.)
+    // This stores the complete history in the main lead row
+    const masterResult = await service.addFollowUpToLeadsMaster(
+      leadIdentifier,
+      followUpData.follow_up_date,
+      followUpData.notes || '',
+      followUpData.follow_up_type || 'Call'
+    );
 
+    // Invalidate cache
     leadsCache.data = null;
+
+    console.log(`✅ Follow-up created for lead ${leadIdentifier}: DB row ${dbResult.rowNumber}, Master slot ${masterResult.slot}`);
 
     res.json({
       success: true,
-      message: 'Follow-up scheduled',
-      data: result
+      message: 'Follow-up scheduled successfully',
+      data: {
+        dbEntry: dbResult,
+        masterSlot: masterResult.slot
+      }
     });
   } catch (error) {
+    console.error('Error creating follow-up:', error);
     next(error);
   }
 });
