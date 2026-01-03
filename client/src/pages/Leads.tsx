@@ -1100,7 +1100,7 @@ export default function LeadsPage() {
                                                 if (selectedLead.followups && selectedLead.followups.length > 0) {
                                                     // Merge with existing, avoiding duplicates by date
                                                     const existingDates = new Set(followUps.map(f => f.date));
-                                                    selectedLead.followups.forEach((fu, idx) => {
+                                                    selectedLead.followups.forEach((fu) => {
                                                         if (!existingDates.has(fu.follow_up_date)) {
                                                             followUps.push({
                                                                 date: fu.follow_up_date,
