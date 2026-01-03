@@ -679,6 +679,16 @@ export class EnhancedSheetsService {
 
     if (found) {
       console.log(`✅ Found lead at row ${searchRow}: ${found.lead_id || 'no-id'}`);
+
+      // Debug: Log follow-up data
+      console.log(`📅 Follow-up data for row ${searchRow}:`);
+      for (let i = 1; i <= 5; i++) {
+        const date = found[`follow_up_${i}_date`];
+        const notes = found[`follow_up_${i}_notes`];
+        if (date) {
+          console.log(`   Slot ${i}: Date="${date}", Notes="${notes || '(empty)'}"`);
+        }
+      }
     } else {
       console.log(`❌ No lead found at row ${searchRow}`);
     }
