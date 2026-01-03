@@ -233,8 +233,8 @@ export async function updateLeadStatus(id: string, status: string, remarks?: str
 /**
  * Schedule follow-up for a lead
  */
-export async function scheduleFollowUp(leadId: string, followUp: Partial<FollowUp>): Promise<{ success: boolean }> {
-  return api.post<{ success: boolean }>(`/leads/${leadId}/followup`, followUp);
+export async function scheduleFollowUp(rowNumber: string, followUp: Partial<FollowUp>): Promise<{ success: boolean }> {
+  return api.post<{ success: boolean }>(`/leads/${rowNumber}/followup`, followUp);
 }
 
 /**

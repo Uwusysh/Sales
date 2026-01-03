@@ -4,7 +4,8 @@
       "Bash(git stash:*)",
       "Bash(git checkout:*)",
       "Bash(npm run build:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor: Remove Daily Follow-up DB, use ONLY Leads Master\n\n**CLEANED UP - Simple Architecture:**\n✅ Removed ALL Daily Follow-up DB references\n✅ ONLY uses Leads Master sheet with Follow_Up_1-5 columns\n✅ Removed SHEET_CONFIG Daily Follow-up DB tab\n✅ Removed getTodayFollowUps\\(\\) using DB\n✅ Removed getOverdueFollowUps\\(\\) using DB  \n✅ Removed getAllActiveFollowUps\\(\\) using DB\n\n**What Remains \\(Clean & Simple\\):**\n✅ getFollowUps\\(\\) - reads from Follow_Up_1-5 columns\n✅ createFollowUp\\(\\) - saves to Follow_Up_1-5 columns\n✅ getAllActiveFollowUpsForAgent\\(\\) - reads from Leads Master\n✅ getLeadsWithTodayFollowUp\\(\\) - reads from Leads Master\n✅ getLeadsWithOverdueFollowUp\\(\\) - reads from Leads Master\n✅ scheduleFollowUpInLeads\\(\\) - saves to Follow_Up_1-5 columns\n✅ completeFollowUp\\(\\) - marks completed in Follow_Up_1-5 notes\n\n**Single Source of Truth:**\n📊 ONLY Leads Master sheet with these columns:\n- Follow_Up_Date \\(main follow-up date\\)\n- Follow_Up_Remarks \\(main notes\\)\n- Follow_Up_1_Date through Follow_Up_5_Date\n- Follow_Up_1_Notes through Follow_Up_5_Notes\n\n**No Extra Sheets, No Complexity!**\nEverything in one place, simple and clean.\n\n🤖 Generated with Claude Code\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

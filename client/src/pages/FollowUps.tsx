@@ -85,7 +85,7 @@ export default function FollowUpsPage() {
         try {
             setLoading(true);
             await completeFollowUp(
-                selectedFollowUp.lead_id,
+                String(selectedFollowUp._rowNumber),
                 selectedFollowUp.follow_up_date,
                 completionForm.outcome,
                 completionForm.nextDate || undefined

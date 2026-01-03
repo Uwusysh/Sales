@@ -261,29 +261,14 @@ router.get('/followups/today', async (req, res, next) => {
   try {
     const authenticatedAgent = req.user.agentName;
     const service = getEnhancedSheetsService();
-    
-    // Get follow-ups from both Daily Follow-up DB and Leads Master
-    const [dbFollowups, leadsFollowups] = await Promise.all([
-      service.getTodayFollowUps(),
-      service.getLeadsWithTodayFollowUp(authenticatedAgent)
-    ]);
-    
-    // Filter DB followups by agent's leads
-    const agentDbFollowups = dbFollowups.filter(f => 
-      f.sales_owner?.toLowerCase() === authenticatedAgent.toLowerCase() ||
-      f.lead_owner?.toLowerCase() === authenticatedAgent.toLowerCase()
-    );
-    
-    // Combine and deduplicate
-    const allFollowups = [...agentDbFollowups, ...leadsFollowups];
-    const uniqueFollowups = Array.from(
-      new Map(allFollowups.map(f => [f.lead_id + f.follow_up_date, f])).values()
-    );
+
+    // Only get follow-ups from Leads Master
+    const leadsFollowups = await service.getLeadsWithTodayFollowUp(authenticatedAgent);
 
     res.json({
       success: true,
-      data: uniqueFollowups,
-      count: uniqueFollowups.length
+      data: leadsFollowups,
+      count: leadsFollowups.length
     });
   } catch (error) {
     next(error);
@@ -299,29 +284,14 @@ router.get('/followups/overdue', async (req, res, next) => {
   try {
     const authenticatedAgent = req.user.agentName;
     const service = getEnhancedSheetsService();
-    
-    // Get overdue from both sources
-    const [dbOverdue, leadsOverdue] = await Promise.all([
-      service.getOverdueFollowUps(),
-      service.getLeadsWithOverdueFollowUp(authenticatedAgent)
-    ]);
-    
-    // Filter by authenticated agent
-    const agentDbOverdue = dbOverdue.filter(f => 
-      f.sales_owner?.toLowerCase() === authenticatedAgent.toLowerCase() ||
-      f.lead_owner?.toLowerCase() === authenticatedAgent.toLowerCase()
-    );
-    
-    // Combine and deduplicate
-    const allOverdue = [...agentDbOverdue, ...leadsOverdue];
-    const uniqueOverdue = Array.from(
-      new Map(allOverdue.map(f => [f.lead_id + f.follow_up_date, f])).values()
-    );
+
+    // Only get overdue follow-ups from Leads Master
+    const leadsOverdue = await service.getLeadsWithOverdueFollowUp(authenticatedAgent);
 
     res.json({
       success: true,
-      data: uniqueOverdue,
-      count: uniqueOverdue.length
+      data: leadsOverdue,
+      count: leadsOverdue.length
     });
   } catch (error) {
     next(error);
@@ -340,7 +310,7 @@ router.get('/followups/active', async (req, res, next) => {
 
     console.log(`📋 Fetching active follow-ups for agent: ${authenticatedAgent}`);
 
-    // Get all active follow-ups for this agent from both sources
+    // Get all active follow-ups for this agent from Leads Master only
     const followups = await service.getAllActiveFollowUpsForAgent(authenticatedAgent);
 
     console.log(`✅ Found ${followups.length} active follow-ups`);
@@ -445,12 +415,12 @@ router.get('/check-duplicate', async (req, res, next) => {
  * Get single lead details
  * PROTECTED: Only returns if lead belongs to authenticated agent
  */
-router.get('/:id', async (req, res, next) => {
+router.get('/:rowNumber', async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const { rowNumber } = req.params;
     const authenticatedAgent = req.user.agentName;
     const service = getEnhancedSheetsService();
-    const lead = await service.getLeadById(id);
+    const lead = await service.getLeadById(rowNumber);
 
     if (!lead) {
       return res.status(404).json({ success: false, error: 'Lead not found' });
@@ -577,30 +547,30 @@ router.post('/force-create', async (req, res, next) => {
  * Update lead fields
  * PROTECTED: Can only update own leads
  */
-router.patch('/:id', async (req, res, next) => {
+router.patch('/:rowNumber', async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const { rowNumber } = req.params;
     const updates = req.body;
     const authenticatedAgent = req.user.agentName;
 
     const service = getEnhancedSheetsService();
-    
+
     // 🔒 SECURITY: Verify ownership before update
-    const lead = await service.getLeadById(id);
+    const lead = await service.getLeadById(rowNumber);
     if (!lead) {
       return res.status(404).json({ success: false, error: 'Lead not found' });
     }
 
     const leadOwner = String(lead.lead_owner || '').trim();
     if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
-      console.warn(`🚫 Unauthorized update attempt: ${authenticatedAgent} tried to update ${leadOwner}'s lead ${id}`);
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Forbidden: You can only update your own leads' 
+      console.warn(`🚫 Unauthorized update attempt: ${authenticatedAgent} tried to update ${leadOwner}'s lead at row ${rowNumber}`);
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You can only update your own leads'
       });
     }
 
-    const result = await service.updateLead(id, updates);
+    const result = await service.updateLead(rowNumber, updates);
 
     if (!result.success) {
       return res.status(404).json(result);
@@ -620,9 +590,9 @@ router.patch('/:id', async (req, res, next) => {
  * Quick status update
  * PROTECTED: Can only update own leads
  */
-router.patch('/:id/status', async (req, res, next) => {
+router.patch('/:rowNumber/status', async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const { rowNumber } = req.params;
     const { status, remarks } = req.body;
     const authenticatedAgent = req.user.agentName;
 
@@ -631,19 +601,19 @@ router.patch('/:id/status', async (req, res, next) => {
     }
 
     const service = getEnhancedSheetsService();
-    
+
     // 🔒 SECURITY: Verify ownership before update
-    const lead = await service.getLeadById(id);
+    const lead = await service.getLeadById(rowNumber);
     if (!lead) {
       return res.status(404).json({ success: false, error: 'Lead not found' });
     }
 
     const leadOwner = String(lead.lead_owner || '').trim();
     if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
-      console.warn(`🚫 Unauthorized status update: ${authenticatedAgent} tried to update ${leadOwner}'s lead ${id}`);
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Forbidden: You can only update your own leads' 
+      console.warn(`🚫 Unauthorized status update: ${authenticatedAgent} tried to update ${leadOwner}'s lead at row ${rowNumber}`);
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You can only update your own leads'
       });
     }
 
@@ -673,14 +643,14 @@ router.patch('/:id/status', async (req, res, next) => {
  * Schedule a follow-up for a lead
  * PROTECTED: Can only schedule followup for own leads
  */
-router.post('/:id/followup', async (req, res, next) => {
+router.post('/:rowNumber/followup', async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const { rowNumber } = req.params;
     const { follow_up_date, notes, follow_up_type = 'Call' } = req.body;
     const authenticatedAgent = req.user.agentName;
 
     const service = getEnhancedSheetsService();
-    const lead = await service.getLeadById(id);
+    const lead = await service.getLeadById(rowNumber);
 
     if (!lead) {
       return res.status(404).json({ success: false, error: 'Lead not found' });
@@ -689,18 +659,18 @@ router.post('/:id/followup', async (req, res, next) => {
     // 🔒 SECURITY: Verify ownership before creating followup
     const leadOwner = String(lead.lead_owner || '').trim();
     if (leadOwner.toLowerCase() !== authenticatedAgent.toLowerCase()) {
-      console.warn(`🚫 Unauthorized followup creation: ${authenticatedAgent} tried to create followup for ${leadOwner}'s lead ${id}`);
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Forbidden: You can only manage followups for your own leads' 
+      console.warn(`🚫 Unauthorized followup creation: ${authenticatedAgent} tried to create followup for ${leadOwner}'s lead at row ${rowNumber}`);
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You can only manage followups for your own leads'
       });
     }
 
-    console.log(`📅 Creating follow-up for lead ${lead.lead_id}: Date=${follow_up_date}, Type=${follow_up_type}, Notes="${notes}"`);
+    console.log(`📅 Creating follow-up for lead at row ${rowNumber}: Date=${follow_up_date}, Type=${follow_up_type}, Notes="${notes}"`);
 
-    // Create follow-up entry in Daily Follow-up DB (also updates Leads Master)
+    // Create follow-up directly in Leads Master using row number
     const result = await service.createFollowUp({
-      lead_id: lead.lead_id || lead.enquiry_code,
+      lead_id: rowNumber, // This is now the row number
       follow_up_date: follow_up_date,
       follow_up_time: req.body.follow_up_time || '',
       sales_owner: authenticatedAgent,

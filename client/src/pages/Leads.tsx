@@ -296,12 +296,12 @@ export default function LeadsPage() {
     // Load full details when lead is selected
     useEffect(() => {
         if (selectedLead?.id) {
-            const leadId = selectedLead.lead_id || selectedLead.enquiry_code || selectedLead.id;
+            const rowNumber = String(selectedLead._rowNumber);
             // Only fetch if we don't have followups yet or if it was just selected
             // We can detect if it's "fresh" from the list by checking if followups is undefined
             if (!selectedLead.followups) {
                 setIsDetailLoading(true);
-                fetchLeadById(leadId)
+                fetchLeadById(rowNumber)
                     .then(res => {
                         setSelectedLead(prev => prev ? { ...prev, ...res.data } : res.data);
                     })
@@ -309,14 +309,14 @@ export default function LeadsPage() {
                     .finally(() => setIsDetailLoading(false));
             }
         }
-    }, [selectedLead?.id, selectedLead?.lead_id, selectedLead?.enquiry_code]);
+    }, [selectedLead?.id, selectedLead?._rowNumber]);
 
     const handleScheduleFollowUp = async () => {
         if (!selectedLead || !followUpForm.date || followUpForm.types.length === 0) return;
 
         try {
             setIsDetailLoading(true);
-            const leadId = selectedLead.lead_id || selectedLead.enquiry_code || selectedLead.id;
+            const leadId = String(selectedLead._rowNumber);
 
             await scheduleFollowUp(leadId, {
                 follow_up_date: followUpForm.date,
