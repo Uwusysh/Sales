@@ -509,7 +509,7 @@ export class EnhancedSheetsService {
    */
   rowToLeadObject(row) {
     const leadObj = {
-      id: row.get('Lead_ID') || row.get('Enquiry_Code') || row.rowNumber,
+      id: String(row.get('Lead_ID') || row.get('Enquiry_Code') || row.rowNumber),
       lead_id: row.get('Lead_ID'),
       enquiry_code: row.get('Enquiry_Code'),
       created_at: row.get('Created_At'),
@@ -694,7 +694,13 @@ export class EnhancedSheetsService {
    */
   async getLeadById(leadId) {
     const leads = await this.getLeads();
-    return leads.find(l => l.lead_id === leadId || l.enquiry_code === leadId || l.id === leadId);
+    const searchId = String(leadId); // Convert to string for comparison
+    return leads.find(l =>
+      String(l.lead_id || '') === searchId ||
+      String(l.enquiry_code || '') === searchId ||
+      String(l.id || '') === searchId ||
+      String(l._rowNumber || '') === searchId // Also match by row number
+    );
   }
 
   // ============ SRF OPERATIONS ============
